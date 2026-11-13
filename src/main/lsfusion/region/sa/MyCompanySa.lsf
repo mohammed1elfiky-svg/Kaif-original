@@ -1,0 +1,11 @@
+MODULE MyCompanySa;
+
+// Kaif - Kingdom of Saudi Arabia localization
+// (VAT 15%, seller/buyer VAT numbers, national address, ZATCA phase 1 QR code, bilingual tax invoice)
+// To enable: logics.topModule = MyCompanySa
+
+REQUIRE MyCompany,
+        PartnerSa,
+        TaxInitialSa,
+        ZatcaQR,
+        InvoicePrintSa, InvoicePrintInitialSa;

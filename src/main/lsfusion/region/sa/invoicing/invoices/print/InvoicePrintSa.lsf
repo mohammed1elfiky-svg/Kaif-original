@@ -1,0 +1,17 @@
+MODULE InvoicePrintSa;
+
+REQUIRE InvoicePrint, InvoicePrintDebt, ZatcaQR;
+
+NAMESPACE Invoicing;
+
+// Saudi specific data for the bilingual (Arabic / English) tax invoice
+crNumberCompanySa (Invoice i) = crNumberSa(company(i));
+nationalAddressCompanySa (Invoice i) = nationalAddressSa(company(i));
+nationalAddressCustomerSa (Invoice i) = nationalAddressSa(customer(i));
+crNumberCustomerSa (Invoice i) = crNumberSa(customer(i));
+
+EXTEND FORM printInvoice
+    PROPERTIES(o) sellerVatNumberSa, buyerVatNumberSa, crNumberCompanySa, crNumberCustomerSa,
+                  nationalAddressCompanySa, nationalAddressCustomerSa,
+                  isSimplifiedSa, zatcaQR
+;

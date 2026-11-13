@@ -1,0 +1,28 @@
+MODULE TaxInitialSa;
+
+REQUIRE Tax, DefaultData;
+
+NAMESPACE Invoicing;
+
+// Saudi VAT rates (ZATCA): standard 15%, zero-rated 0%, exempt
+loadDefaultData() + {
+    NEW g = TaxGroup {
+        name(g) <- 'VAT';
+        id(g) <- 'vat';
+        NEW t = Tax {
+            name(t) <- '15%';
+            value(t) <- 15;
+            taxGroup(t) <- g;
+        }
+        NEW t = Tax {
+            name(t) <- '0%';
+            value(t) <- 0;
+            taxGroup(t) <- g;
+        }
+        NEW t = Tax {
+            name(t) <- 'Exempt';
+            value(t) <- 0;
+            taxGroup(t) <- g;
+        }
+    }
+}

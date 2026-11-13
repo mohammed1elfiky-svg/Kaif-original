@@ -1,0 +1,13 @@
+MODULE InvoicePrintInitialSa;
+
+REQUIRE InvoicePrint, InvoicePrintSa;
+
+NAMESPACE Invoicing;
+
+loadDefaultData () + {
+    NEW tm = InvoiceTemplate {
+        name(tm) <- 'فاتورة ضريبية / Tax invoice';
+        template(tm) <- 'TaxInvoiceSa.jrxml';
+        in(tm, InvoiceType t) <- TRUE;
+    }
+}

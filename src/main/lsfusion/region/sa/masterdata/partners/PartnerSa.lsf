@@ -1,0 +1,54 @@
+MODULE PartnerSa;
+
+REQUIRE Partner;
+
+NAMESPACE MasterData;
+
+// VAT registration number (ZATCA): 15 digits, starts and ends with 3
+vatNumberSa 'VAT number' = DATA STRING[15] (Partner) CHARWIDTH 15;
+partnerVatNumberSa = GROUP MAX Partner p BY vatNumberSa(p);
+
+validVatNumberSa = FORMULA INTEGER '(CASE WHEN ($1) ~ \'^3[0-9]\{13\}3$\' THEN 1 END)';
+
+CONSTRAINT vatNumberSa(Partner p) AND NOT validVatNumberSa(vatNumberSa(p))
+    MESSAGE 'The VAT number must consist of 15 digits and start and end with 3';
+
+// Commercial registration (CR) number
+crNumberSa 'CR number' = DATA STRING[10] (Partner) CHARWIDTH 10;
+
+// National address (required for the buyer on a standard tax invoice)
+buildingNumberSa 'Building number' = DATA STRING[4] (Partner) CHARWIDTH 4;
+districtSa 'District' = DATA ISTRING[50] (Partner) CHARWIDTH 12;
+additionalNumberSa 'Additional number' = DATA STRING[4] (Partner) CHARWIDTH 4;
+
+nationalAddressSa 'National address' (Partner p) =
+    CONCAT ', ', (CONCAT ' ', buildingNumberSa(p), address(p)), districtSa(p), city(p),
+                 (CONCAT '-', zip(p), additionalNumberSa(p)), nameCountry(p) CHARWIDTH 30;
+
+EXTEND FORM partner
+    PROPERTIES(p) vatNumberSa, crNumberSa, buildingNumberSa, districtSa, additionalNumberSa
+;
+
+DESIGN partner {
+    legalInfoOptions {
+        NEW saudiLegal {
+            caption = 'Saudi Arabia';
+            horizontal = TRUE;
+            alignment = STRETCH;
+            MOVE PROPERTY(vatNumberSa(p));
+            MOVE PROPERTY(crNumberSa(p));
+        }
+        NEW saudiAddress {
+            caption = 'National address';
+            horizontal = TRUE;
+            alignment = STRETCH;
+            MOVE PROPERTY(buildingNumberSa(p));
+            MOVE PROPERTY(districtSa(p));
+            MOVE PROPERTY(additionalNumberSa(p));
+        }
+    }
+}
+
+EXTEND FORM partners
+    PROPERTIES(p) READONLYIF isReadonly() GRID vatNumberSa
+;

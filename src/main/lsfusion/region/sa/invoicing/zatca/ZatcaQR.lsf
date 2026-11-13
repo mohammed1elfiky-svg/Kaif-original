@@ -1,0 +1,23 @@
+MODULE ZatcaQR;
+
+REQUIRE Invoice, InvoiceTax, PartnerSa, Company;
+
+NAMESPACE Invoicing;
+
+// ZATCA e-invoicing phase 1 (generation phase) QR code.
+// TLV (tag-length-value) encoded in Base64, tags:
+//   1 - seller name, 2 - seller VAT number, 3 - invoice timestamp (UTC, ISO 8601),
+//   4 - invoice total with VAT, 5 - VAT total.
+// Invoice date/time is entered in Saudi local time (Asia/Riyadh) and converted to UTC.
+// Values must not exceed 255 bytes each (UTF-8).
+zatcaTLV = FORMULA TEXT 'translate(encode(decode(\'01\',\'hex\')||set_byte(decode(\'00\',\'hex\'),0,octet_length(convert_to(($1),\'UTF8\')))||convert_to(($1),\'UTF8\')||decode(\'02\',\'hex\')||set_byte(decode(\'00\',\'hex\'),0,octet_length(convert_to(($2),\'UTF8\')))||convert_to(($2),\'UTF8\')||decode(\'03\',\'hex\')||set_byte(decode(\'00\',\'hex\'),0,octet_length(convert_to(to_char((($3) AT TIME ZONE \'Asia/Riyadh\') AT TIME ZONE \'UTC\',\'YYYY-MM-DD"T"HH24:MI:SS"Z"\'),\'UTF8\')))||convert_to(to_char((($3) AT TIME ZONE \'Asia/Riyadh\') AT TIME ZONE \'UTC\',\'YYYY-MM-DD"T"HH24:MI:SS"Z"\'),\'UTF8\')||decode(\'04\',\'hex\')||set_byte(decode(\'00\',\'hex\'),0,octet_length(convert_to(round(($4),2)::text,\'UTF8\')))||convert_to(round(($4),2)::text,\'UTF8\')||decode(\'05\',\'hex\')||set_byte(decode(\'00\',\'hex\'),0,octet_length(convert_to(round(($5),2)::text,\'UTF8\')))||convert_to(round(($5),2)::text,\'UTF8\'),\'base64\'),chr(10),\'\')';
+
+sellerNameSa 'Seller name' (Invoice i) = fullName(company(i));
+sellerVatNumberSa 'Seller VAT number' (Invoice i) = vatNumberSa(company(i));
+buyerVatNumberSa 'Buyer VAT number' (Invoice i) = vatNumberSa(customer(i));
+
+// Standard tax invoice (B2B) when the buyer is VAT registered, otherwise simplified tax invoice (B2C)
+isSimplifiedSa 'Simplified tax invoice' (Invoice i) = i IS Invoice AND NOT buyerVatNumberSa(i);
+
+zatcaQR 'ZATCA QR' (Invoice i) = zatcaTLV(sellerNameSa(i), sellerVatNumberSa(i), dateTime(i), amount(i), (OVERRIDE taxAmount(i), 0.0))
+    IF sellerVatNumberSa(i);
