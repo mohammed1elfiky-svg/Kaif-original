@@ -1,0 +1,10 @@
+MODULE KaifBrand;
+
+REQUIRE SystemEvents;
+
+NAMESPACE Utils;
+
+// Kaif brand theme (green / white) for the web client: web/kaif/kaif-theme.css
+onWebClientInit() + {
+    onWebClientInit('kaif-theme.css') <- 3;
+}

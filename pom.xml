@@ -18,13 +18,13 @@
     </parent>
 
     <groupId>lsfusion.solutions</groupId>
-    <artifactId>mycompany</artifactId>
+    <artifactId>kaif</artifactId>
     <version>7.0-SNAPSHOT</version>
     <packaging>jar</packaging>
-    <name>MyCompany</name>
+    <name>Kaif</name>
 
     <scm>
-        <developerConnection>scm:git:ssh://git@github.com/lsfusion-solutions/mycompany.git</developerConnection>
+        <developerConnection>scm:git:ssh://git@github.com/mohammed1elfiky-svg/Kaif-original.git</developerConnection>
       <tag>HEAD</tag>
   </scm>
 
@@ -44,7 +44,7 @@
         <deploy.releases.repo>${lsfusion.releases.repo}</deploy.releases.repo>
         <deploy.snapshots.repo>${lsfusion.snapshots.repo}</deploy.snapshots.repo>
         <docker.image.namespace>lsfusion</docker.image.namespace>
-        <docker.image.repository>mycompany</docker.image.repository>
+        <docker.image.repository>kaif</docker.image.repository>
     </properties>
 
     <profiles>

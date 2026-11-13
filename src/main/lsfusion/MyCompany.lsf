@@ -1,6 +1,6 @@
 MODULE MyCompany;
 
-REQUIRE Eval, ProcessMonitor, Backup, Chat, OpenAI, Documentation, SQLUtils,
+REQUIRE Eval, ProcessMonitor, Backup, Chat, OpenAI, Documentation, SQLUtils, KaifBrand,
         MasterDataP,
         Dashboard,
         Accounting,

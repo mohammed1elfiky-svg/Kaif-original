@@ -1,0 +1,43 @@
+/* Kaif brand theme: green and white.
+   Brand colors live in the two variables below; update them once the final brand palette is approved. */
+:root:root {
+    --kaif-green: #0F7A43;
+    --kaif-green-rgb: 15, 122, 67;
+    --kaif-green-dark: #0A5C32;
+    --kaif-green-light: #E8F5EE;
+
+    --focus-color: var(--kaif-green);
+    --selection-color: var(--kaif-green-light);
+    --selection-color-rgba: rgba(var(--kaif-green-rgb), 0.18);
+    --table-selection-color-rgba: rgba(var(--kaif-green-rgb), 0.10);
+    --column-selection-color-rgba: rgba(var(--kaif-green-rgb), 0.15);
+    --component-hover-border-color: var(--kaif-green);
+    --date-picker-selection-background-color: var(--kaif-green);
+    --option-selected-hover-color: rgba(var(--kaif-green-rgb), 0.35);
+
+    --bs-primary: var(--kaif-green);
+    --bs-primary-rgb: var(--kaif-green-rgb);
+    --bs-link-color: var(--kaif-green);
+    --bs-link-color-rgb: var(--kaif-green-rgb);
+    --bs-link-hover-color: var(--kaif-green-dark);
+}
+
+.btn-primary {
+    --bs-btn-bg: var(--kaif-green);
+    --bs-btn-border-color: var(--kaif-green);
+    --bs-btn-hover-bg: var(--kaif-green-dark);
+    --bs-btn-hover-border-color: var(--kaif-green-dark);
+    --bs-btn-active-bg: var(--kaif-green-dark);
+    --bs-btn-active-border-color: var(--kaif-green-dark);
+    --bs-btn-disabled-bg: var(--kaif-green);
+    --bs-btn-disabled-border-color: var(--kaif-green);
+}
+
+.btn-outline-primary {
+    --bs-btn-color: var(--kaif-green);
+    --bs-btn-border-color: var(--kaif-green);
+    --bs-btn-hover-bg: var(--kaif-green);
+    --bs-btn-hover-border-color: var(--kaif-green);
+    --bs-btn-active-bg: var(--kaif-green-dark);
+    --bs-btn-active-border-color: var(--kaif-green-dark);
+}
