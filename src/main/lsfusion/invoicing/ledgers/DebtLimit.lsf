@@ -1,0 +1,98 @@
+MODULE DebtLimit;
+
+REQUIRE DebtPartner, InvoiceDebt, PartnerSales, InvoicingSettings;
+
+NAMESPACE Invoicing;
+
+// Credit control for sales on credit:
+//  - credit limit: the customer's debt after the invoice is posted must not exceed it;
+//  - max overdue days: no new invoice while the customer has a debt overdue for longer than that.
+// Values on the partner card override the defaults from the invoicing settings. Empty = no check.
+
+defaultCreditLimit 'Default credit limit' = DATA NUMERIC[14,2] ();
+defaultMaxOverdueDays 'Default max overdue days' = DATA INTEGER ();
+
+dataCreditLimit 'Credit limit' = DATA NUMERIC[14,2] (Partner);
+dataMaxOverdueDays 'Max overdue days' = DATA INTEGER (Partner);
+noCreditControl 'No credit control' = DATA BOOLEAN (Partner);
+
+creditLimit 'Credit limit' (Partner p) = (OVERRIDE dataCreditLimit(p), (defaultCreditLimit() IF isCustomer(p))) IF NOT noCreditControl(p);
+maxOverdueDays 'Max overdue days' (Partner p) = (OVERRIDE dataMaxOverdueDays(p), (defaultMaxOverdueDays() IF isCustomer(p))) IF NOT noCreditControl(p);
+
+availableCredit 'Available credit' (Partner p) = creditLimit(p) (-) (debt(p) IF debt(p) > 0);
+
+// the oldest unpaid overdue invoice (or other outgoing debt) of the partner, in days
+maxOverdueDebtDays 'Days overdue' (Partner p) = GROUP MAX overdueDays(OutgoingDebt d) IF active(d) AND left(d) > 0 AND partner(d) = p;
+
+// manual exception for a single invoice (restrict this property to managers via role permissions)
+skipCreditControl 'Ignore credit limit' = DATA BOOLEAN (Invoice);
+
+checkCreditControl (Invoice i) = active[Debt](i) AND NOT skipCreditControl(i);
+
+CONSTRAINT (SETCHANGED(active[Debt](Invoice i)) OR (active[Debt](i) AND CHANGED(amount[Debt](i)))) AND checkCreditControl(i)
+           AND debt(customer(i)) > creditLimit(customer(i))
+    MESSAGE 'The credit limit of the customer is exceeded';
+
+CONSTRAINT SETCHANGED(active[Debt](Invoice i)) AND checkCreditControl(i)
+           AND maxOverdueDebtDays(customer(i)) > maxOverdueDays(customer(i))
+    MESSAGE 'The customer has overdue debts for more days than allowed';
+
+// partner card
+EXTEND FORM partner
+    PROPERTIES(p) dataCreditLimit, dataMaxOverdueDays, noCreditControl
+    PROPERTIES(p) READONLY creditLimit, availableCredit, maxOverdueDebtDays
+;
+
+DESIGN partner {
+    customerOptions {
+        NEW creditControl {
+            caption = 'Credit control';
+            horizontal = TRUE;
+            alignment = STRETCH;
+            MOVE PROPERTY(dataCreditLimit(p));
+            MOVE PROPERTY(dataMaxOverdueDays(p));
+            MOVE PROPERTY(noCreditControl(p));
+            MOVE PROPERTY(availableCredit(p));
+            MOVE PROPERTY(maxOverdueDebtDays(p));
+        }
+    }
+}
+
+EXTEND FORM partners
+    PROPERTIES(p) READONLY creditLimit, availableCredit
+;
+
+// invoice
+customerCreditLimit 'Credit limit' (Invoice i) = creditLimit(customer(i));
+customerAvailableCredit 'Available credit' (Invoice i) = availableCredit(customer(i));
+
+EXTEND FORM invoice
+    PROPERTIES(i) READONLY customerCreditLimit, customerAvailableCredit SHOWIF customerCreditLimit(i)
+    PROPERTIES(i) skipCreditControl SHOWIF customerCreditLimit(i) OR maxOverdueDays(customer(i))
+;
+
+DESIGN invoice {
+    headerRight {
+        NEW creditControl {
+            horizontal = TRUE;
+            MOVE PROPERTY(customerCreditLimit(i));
+            MOVE PROPERTY(customerAvailableCredit(i));
+            MOVE PROPERTY(skipCreditControl(i));
+        }
+    }
+}
+
+// settings
+EXTEND FORM options
+    PROPERTIES() defaultCreditLimit, defaultMaxOverdueDays
+;
+
+DESIGN options {
+    commons {
+        NEW creditControl {
+            caption = 'Credit control';
+            MOVE PROPERTY(defaultCreditLimit());
+            MOVE PROPERTY(defaultMaxOverdueDays());
+        }
+    }
+}

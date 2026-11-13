@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- Kaif: bilingual (Arabic / English) tax invoice for the Kingdom of Saudi Arabia with the ZATCA phase 1 QR code -->
+<!-- Al-Kaif Al-Asli (Kaif Original): bilingual (Arabic / English) tax invoice for the Kingdom of Saudi Arabia with the ZATCA phase 1 QR code -->
 <jasperReport xmlns="http://jasperreports.sourceforge.net/jasperreports" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://jasperreports.sourceforge.net/jasperreports http://jasperreports.sourceforge.net/xsd/jasperreport.xsd" name="TaxInvoiceSa" pageWidth="595" pageHeight="842" whenNoDataType="AllSectionsNoDetail" columnWidth="515" leftMargin="40" rightMargin="40" topMargin="30" bottomMargin="30" isSummaryWithPageHeaderAndFooter="true">
 	<style name="Base" isDefault="true" fontName="DejaVu Sans" fontSize="8" pdfFontName="DejaVu Sans" pdfEncoding="Identity-H" isPdfEmbedded="true"/>
 	<field name="logoCompany(o)" class="java.io.InputStream"/>
@@ -52,7 +52,7 @@
 	</detail>
 	<pageFooter>
 		<band height="18" splitType="Stretch">
-			<line><reportElement x="0" y="0" width="515" height="1" forecolor="#0F7A43"/><graphicElement><pen lineWidth="0.75"/></graphicElement></line><textField textAdjust="ScaleFont" isBlankWhenNull="true"><reportElement positionType="FixRelativeToTop" stretchType="ContainerHeight" x="0" y="3" width="300" height="14" forecolor="#4B5563"/><box leftPadding="2" rightPadding="2"/><textElement textAlignment="Left" verticalAlignment="Middle"><font size="7"/></textElement><textFieldExpression><![CDATA["Kaif - كيف"]]></textFieldExpression></textField><textField textAdjust="ScaleFont" isBlankWhenNull="true"><reportElement positionType="FixRelativeToTop" stretchType="ContainerHeight" x="300" y="3" width="215" height="14" forecolor="#4B5563"/><box leftPadding="2" rightPadding="2"/><textElement textAlignment="Right" verticalAlignment="Middle"><font size="7"/></textElement><textFieldExpression><![CDATA["صفحة / Page " + $V{PAGE_NUMBER}]]></textFieldExpression></textField>
+			<line><reportElement x="0" y="0" width="515" height="1" forecolor="#0F7A43"/><graphicElement><pen lineWidth="0.75"/></graphicElement></line><textField textAdjust="ScaleFont" isBlankWhenNull="true"><reportElement positionType="FixRelativeToTop" stretchType="ContainerHeight" x="0" y="3" width="300" height="14" forecolor="#4B5563"/><box leftPadding="2" rightPadding="2"/><textElement textAlignment="Left" verticalAlignment="Middle"><font size="7"/></textElement><textFieldExpression><![CDATA["الكيف الأصلي"]]></textFieldExpression></textField><textField textAdjust="ScaleFont" isBlankWhenNull="true"><reportElement positionType="FixRelativeToTop" stretchType="ContainerHeight" x="300" y="3" width="215" height="14" forecolor="#4B5563"/><box leftPadding="2" rightPadding="2"/><textElement textAlignment="Right" verticalAlignment="Middle"><font size="7"/></textElement><textFieldExpression><![CDATA["صفحة / Page " + $V{PAGE_NUMBER}]]></textFieldExpression></textField>
 		</band>
 	</pageFooter>
 	<summary>

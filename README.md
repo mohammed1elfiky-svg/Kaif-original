@@ -1,10 +1,10 @@
 <div dir="rtl">
 
-# كيف — Kaif
+# الكيف الأصلي — Kaif Original
 
-**كيف** نظام متكامل لتخطيط موارد المؤسسات (ERP) وإدارة علاقات العملاء (CRM)، موجّه للشركات الصغيرة والمتوسطة في المملكة العربية السعودية. يضم المخزون والفوترة والمبيعات والمشتريات والتصنيع والمشاريع والموارد البشرية ونقاط البيع في تطبيق واحد وقاعدة بيانات واحدة.
+**الكيف الأصلي** نظام متكامل لتخطيط موارد المؤسسات (ERP) وإدارة علاقات العملاء (CRM)، موجّه للشركات الصغيرة والمتوسطة في المملكة العربية السعودية. يضم المخزون والفوترة والمبيعات والمشتريات والتصنيع والمشاريع والموارد البشرية ونقاط البيع في تطبيق واحد وقاعدة بيانات واحدة.
 
-## ما يميز كيف
+## ما يميز الكيف الأصلي
 
 - **واجهة عربية**: جميع نصوص التطبيق مترجمة إلى العربية، واللغة الافتراضية هي العربية.
 - **إضافة السعودية** (`src/main/lsfusion/region/sa`):
@@ -12,7 +12,8 @@
   - الرقم الضريبي للشركاء مع التحقق من صحته (15 رقماً يبدأ وينتهي بالرقم 3)، ورقم السجل التجاري، والعنوان الوطني.
   - رمز QR الخاص بهيئة الزكاة والضريبة والجمارك (المرحلة الأولى من الفوترة الإلكترونية).
   - فاتورة ضريبية وفاتورة ضريبية مبسطة بالعربية والإنجليزية.
-- **هوية كيف**: الاسم، والألوان الخضراء والبيضاء في واجهة الويب.
+- **البيع الآجل والرقابة الائتمانية**: حد ائتماني وأقصى أيام تأخير لكل عميل (أو قيم افتراضية من إعدادات الفوترة)، ومنع ترحيل الفاتورة عند تجاوزهما، مع إمكانية الاستثناء لفاتورة محددة.
+- **هوية الكيف الأصلي**: الاسم، والألوان الخضراء والبيضاء في واجهة الويب.
 
 ## الوحدات
 
@@ -29,20 +30,21 @@
 
 ## الترخيص
 
-كيف مبني على مشروع [MyCompany](https://github.com/lsfusion-solutions/mycompany) مفتوح المصدر من lsFusion، وهو مرخّص بموجب [Apache License 2.0](LICENSE). منصة lsFusion مرخّصة بشكل منفصل بموجب LGPL v3.
+الكيف الأصلي مبني على مشروع [MyCompany](https://github.com/lsfusion-solutions/mycompany) مفتوح المصدر من lsFusion، وهو مرخّص بموجب [Apache License 2.0](LICENSE). منصة lsFusion مرخّصة بشكل منفصل بموجب LGPL v3.
 
 </div>
 
 ---
 
-# Kaif
+# Kaif Original (Al-Kaif Al-Asli)
 
-Kaif is an ERP and CRM for small and medium-sized businesses in Saudi Arabia: inventory, invoicing, sales, purchasing, manufacturing, projects, HR and retail POS in one application with a single database.
+Kaif Original is an ERP and CRM for small and medium-sized businesses in Saudi Arabia: inventory, invoicing, sales, purchasing, manufacturing, projects, HR and retail POS in one application with a single database.
 
 - **Arabic interface**: all application strings are translated into Arabic, which is the default language.
 - **Saudi Arabia localization** (`src/main/lsfusion/region/sa`): VAT 15% / 0% / exempt, validated VAT numbers, CR numbers and national addresses on partners, the ZATCA phase 1 QR code, and a bilingual tax invoice / simplified tax invoice.
-- **Kaif branding**: the application name and a green and white web theme (`src/main/resources/web/kaif/kaif-theme.css`).
+- **Credit control**: a credit limit and maximum overdue days per customer (or defaults from the invoicing settings); posting an invoice that exceeds them is blocked, with a per-invoice override.
+- **Kaif Original branding**: the application name and a green and white web theme (`src/main/resources/web/kaif/kaif-theme.css`).
 
 The top module is `MyCompanySa` (`src/main/resources/lsfusion.properties`). Before production use, change the default database password in `conf/settings.properties`.
 
-Kaif is based on the open-source [MyCompany](https://github.com/lsfusion-solutions/mycompany) by lsFusion, licensed under the [Apache License 2.0](LICENSE). The underlying lsFusion platform is licensed separately under LGPL v3.
+Kaif Original is based on the open-source [MyCompany](https://github.com/lsfusion-solutions/mycompany) by lsFusion, licensed under the [Apache License 2.0](LICENSE). The underlying lsFusion platform is licensed separately under LGPL v3.

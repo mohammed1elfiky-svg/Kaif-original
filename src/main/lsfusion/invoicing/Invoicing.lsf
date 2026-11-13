@@ -28,7 +28,7 @@ REQUIRE InvoicingSettings, PaymentTerms,
         BillPayment, BillPaymentContract, BillPaymentInitial, BillMobile,
         CustomsDeclaration, BillCustomsDeclaration, BillCustomsDeclarationInitial,
         InvoicePayment, InvoicePaymentContract,InvoicePaymentInitial,
-        DebtPartner, DebtContract, PaymentCalendar,
+        DebtPartner, DebtLimit, DebtContract, PaymentCalendar,
         DebtAging, DebtAgingInitial, DebtAgingReport, ReconciliationStatement,
         Tax, TaxGroup, TaxItem, MetaTax, TaxItemImport,
         InvoicingDashboard;
