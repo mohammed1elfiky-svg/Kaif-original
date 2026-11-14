@@ -29,14 +29,18 @@ jobs:
           cache: maven
 
       - name: Build with the platform
-        run: mvn -B -ntp -P assemble package -DskipTests
+        run: |
+          mvn -B -ntp package -DskipTests
+          mvn -B -ntp dependency:build-classpath -Dmdep.outputFile=cp.txt -Dmdep.includeScope=test
+          ls -la target/*.jar
 
       - name: Check the modules (dry run)
         run: |
-          jar=$(ls -S target/*.jar | head -1)
-          echo "Server jar: $jar"
+          jar=$(ls target/*.jar | grep -v -- '-sources' | head -1)
+          echo "Logics jar: $jar"
           set +e
-          java -Dsettings.dryRun=true -Dlogics.topModule=MyCompanySa -jar "$jar" > dryrun.log 2>&1
+          java -Dsettings.dryRun=true -Dlogics.topModule=MyCompanySa -cp "$jar:$(cat cp.txt)" \
+            lsfusion.server.logics.BusinessLogicsBootstrap > dryrun.log 2>&1
           code=$?
           set -e
           tail -n 300 dryrun.log
