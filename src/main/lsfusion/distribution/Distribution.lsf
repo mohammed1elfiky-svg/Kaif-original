@@ -3,13 +3,15 @@ MODULE Distribution;
 REQUIRE Employee, Location, InvLedger, ProductSku, BarCode, TaxItem, PartnerGeo, PartnerSales,
         SalesPriceType, SalesPricelistValue, SalesPricelistInvoice, PaymentTermsSales,
         InvoiceShipment, InvoiceDebt, DebtLimit, IncomingPaymentDebt, IncomingPaymentDone, CashAccount,
+        CreditNote, CreditNoteReceipt, BillDebt, OutgoingPaymentDebt, OutgoingPaymentDone,
         PartnerSa;
 
 NAMESPACE Distribution;
 
 // Van sales (mobile distributors) working offline with the Kaif distributor app (distributor-app/).
-// The app downloads its data with getData, sells from the van stock, collects payments and prints
-// invoices without a network, then uploads the documents with upload when it is online.
+// The app downloads its data with getData, sells from the van stock, takes returns, collects payments,
+// logs customer visits, closes the day and prints documents without a network, then uploads
+// everything with upload when it is online.
 
 // ---------- settings ----------
 
@@ -21,6 +23,14 @@ nameCashPaymentType 'Payment type (cash)' () = name(cashPaymentType());
 
 bankPaymentType = DATA IncomingPaymentType ();
 nameBankPaymentType 'Payment type (transfer / card)' () = name(bankPaymentType());
+
+// customer returns: a credit note (bill type marked as return, with a receipt type and automatic receipt,
+// so the goods come back to the van stock) and a cash refund when the customer is paid back
+returnBillType = DATA BillType ();
+nameReturnBillType 'Return type for distributors' () = name(returnBillType());
+
+refundPaymentType = DATA OutgoingPaymentType ();
+nameRefundPaymentType 'Refund payment type (cash)' () = name(refundPaymentType());
 
 // ---------- distributors ----------
 
@@ -35,10 +45,25 @@ employeeDocumentPrefix = GROUP AGGR Employee e BY documentPrefix(e);
 CONSTRAINT isDistributor(Employee e) AND NOT documentPrefix(e)
     MESSAGE 'A distributor must have a document prefix (unique invoice numbering on the device)';
 
-// customers of the distributor (route)
+// ---------- customers and route ----------
+
 distributor = DATA Employee (Partner);
 nameDistributor 'Distributor' (Partner p) = name(distributor(p));
 countCustomers 'Customers' (Employee e) = GROUP SUM 1 IF distributor(Partner p) = e AND active(p);
+
+// visit days (the Saudi week starts on Sunday) and the order of the customer in the route of the day
+visitSun 'Sun' = DATA BOOLEAN (Partner);
+visitMon 'Mon' = DATA BOOLEAN (Partner);
+visitTue 'Tue' = DATA BOOLEAN (Partner);
+visitWed 'Wed' = DATA BOOLEAN (Partner);
+visitThu 'Thu' = DATA BOOLEAN (Partner);
+visitFri 'Fri' = DATA BOOLEAN (Partner);
+visitSat 'Sat' = DATA BOOLEAN (Partner);
+visitOrder 'Route order' = DATA INTEGER (Partner);
+
+// ISO weekday numbers for the app: Monday = 1 ... Sunday = 7
+visitDays (Partner p) = CONCAT ',', ('1' IF visitMon(p)), ('2' IF visitTue(p)), ('3' IF visitWed(p)), ('4' IF visitThu(p)),
+                                    ('5' IF visitFri(p)), ('6' IF visitSat(p)), ('7' IF visitSun(p));
 
 // ---------- documents from the app ----------
 
@@ -52,12 +77,64 @@ incomingPaymentMobile = GROUP AGGR IncomingPayment p BY mobileId(p);
 distributor = DATA Employee (IncomingPayment);
 nameDistributor 'Distributor' (IncomingPayment p) = name(distributor(p));
 
-// ---------- download: GET /exec/Distribution.getData ----------
+mobileId 'Mobile ID' = DATA STRING[40] (Bill) INDEXED;
+billMobile = GROUP AGGR Bill b BY mobileId(b);
+distributor = DATA Employee (Bill);
+nameDistributor 'Distributor' (Bill b) = name(distributor(b));
+
+mobileId 'Mobile ID' = DATA STRING[40] (OutgoingPayment) INDEXED;
+outgoingPaymentMobile = GROUP AGGR OutgoingPayment p BY mobileId(p);
+
+// visits
+CLASS Visit 'Visit';
+mobileId 'Mobile ID' = DATA STRING[40] (Visit) INDEXED;
+visitMobile = GROUP AGGR Visit v BY mobileId(v);
+distributor = DATA Employee (Visit) NONULL DELETE;
+nameDistributor 'Distributor' (Visit v) = name(distributor(v));
+customer = DATA Partner (Visit) NONULL DELETE;
+nameCustomer 'Customer' (Visit v) = name(customer(v));
+dateTime 'Date' = DATA DATETIME (Visit) NONULL;
+latitude 'Latitude' = DATA DOUBLE (Visit);
+longitude 'Longitude' = DATA DOUBLE (Visit);
+result 'Result' = DATA ISTRING[50] (Visit);
+note 'Note' = DATA ISTRING[200] (Visit);
+coordinates 'Coordinates' (Visit v) = CONCAT ', ', latitude(v), longitude(v);
+
+lastVisit 'Last visit' (Partner p) = GROUP MAX dateTime(Visit v) IF customer(v) = p;
+
+// end of day closing: van stock counted by the distributor and the cash handed over
+CLASS Closing 'Closing of the day';
+mobileId 'Mobile ID' = DATA STRING[40] (Closing) INDEXED;
+closingMobile = GROUP AGGR Closing c BY mobileId(c);
+distributor = DATA Employee (Closing) NONULL DELETE;
+nameDistributor 'Distributor' (Closing c) = name(distributor(c));
+number 'Number' = DATA STRING[50] (Closing);
+dateTime 'Date' = DATA DATETIME (Closing) NONULL;
+salesAmount 'Sales' = DATA NUMERIC[14,2] (Closing);
+creditAmount 'Credit sales' = DATA NUMERIC[14,2] (Closing);
+returnsAmount 'Returns' = DATA NUMERIC[14,2] (Closing);
+collectedBank 'Collected (transfer / card)' = DATA NUMERIC[14,2] (Closing);
+cashExpected 'Expected cash' = DATA NUMERIC[14,2] (Closing);
+cashHanded 'Cash handed over' = DATA NUMERIC[14,2] (Closing);
+cashDifference 'Cash difference' (Closing c) = cashHanded(c) (-) cashExpected(c);
+note 'Note' = DATA ISTRING[200] (Closing);
+
+CLASS ClosingLine 'Closing line';
+closing = DATA Closing (ClosingLine) NONULL DELETE;
+item = DATA Item (ClosingLine) NONULL;
+nameItem 'Item' (ClosingLine l) = name(item(l));
+expected 'Expected' = DATA NUMERIC[16,3] (ClosingLine);
+counted 'Counted' = DATA NUMERIC[16,3] (ClosingLine);
+difference 'Difference' (ClosingLine l) = counted(l) (-) expected(l);
+countDifferences 'Stock differences' (Closing c) = GROUP SUM 1 IF closing(ClosingLine l) = c AND difference(l) != 0;
+
+// ---------- download: POST /exec/Distribution.getData ----------
 
 distributionPriceType (Partner p) = OVERRIDE priceType(p), priceType(invoiceType());
 usedPriceType (Employee e, PriceType t) = GROUP SUM 1 IF distributor(Partner p) = e AND active(p) AND distributionPriceType(p) = t;
 
 vanOnHand (Employee e, Product p) = onHand(vanLocation(e), p);
+distributorPrice (Employee e, Product i) = GROUP MAX overPriceA(PriceType t, i, currentDateTime()) IF usedPriceType(e, t);
 
 getData () {
     FOR Employee e = currentUser() AND isDistributor(e) DO {
@@ -88,7 +165,9 @@ getData () {
                 creditLimit = creditLimit(p),
                 maxOverdueDays = maxOverdueDays(p),
                 debt = debt(p),
-                overdueDays = maxOverdueDebtDays(p)
+                overdueDays = maxOverdueDebtDays(p),
+                visitDays = visitDays(p),
+                visitOrder = visitOrder(p)
                 WHERE distributor(p) = e AND active(p)),
             openInvoices = (JSON FROM
                 customer = id(partner(OutgoingDebt d)),
@@ -98,6 +177,7 @@ getData () {
                 amount = amount(d),
                 left = left(d)
                 WHERE active(d) AND left(d) > 0 AND distributor(partner(d)) = e),
+            // the van stock, and the other items with a price, which can be returned by customers
             items = (JSON FROM
                 id = id(Product i),
                 name = name(i),
@@ -105,13 +185,13 @@ getData () {
                 uom = nameUom(i),
                 tax = salesTax(i),
                 onHand = vanOnHand(e, i)
-                WHERE id(i) AND active(i) AND vanOnHand(e, i) > 0),
+                WHERE id(i) AND active(i) AND (vanOnHand(e, i) > 0 OR distributorPrice(e, i))),
             prices = (JSON FROM
                 priceType = id(PriceType t),
                 taxIncluded = taxIncluded(t),
                 item = id(Product i),
                 price = overPriceA(t, i, currentDateTime())
-                WHERE usedPriceType(e, t) AND vanOnHand(e, i) > 0 AND overPriceA(t, i, currentDateTime()));
+                WHERE usedPriceType(e, t) AND id(i) AND active(i) AND overPriceA(t, i, currentDateTime()));
     } ELSE
         throwException('The current user is not a distributor');
 } @@api;
@@ -143,6 +223,47 @@ payMethod = DATA LOCAL STRING[10] (INTEGER);
 payInvoice = DATA LOCAL STRING[50] (INTEGER);
 payNote = DATA LOCAL STRING (INTEGER);
 
+// returns
+retId = DATA LOCAL STRING[40] (INTEGER);
+retNumber = DATA LOCAL STRING[50] (INTEGER);
+retDate = DATA LOCAL DATETIME (INTEGER);
+retCustomer = DATA LOCAL STRING[50] (INTEGER);
+retTaxIncluded = DATA LOCAL BOOLEAN (INTEGER);
+retRefund = DATA LOCAL NUMERIC[14,2] (INTEGER);
+retInvoice = DATA LOCAL STRING[50] (INTEGER);
+retReason = DATA LOCAL STRING (INTEGER);
+
+retLineReturn = DATA LOCAL INTEGER (LONG);
+retLineItem = DATA LOCAL STRING[50] (LONG);
+retLineQuantity = DATA LOCAL NUMERIC[16,3] (LONG);
+retLinePrice = DATA LOCAL NUMERIC[10,2] (LONG);
+
+// visits
+visId = DATA LOCAL STRING[40] (INTEGER);
+visDate = DATA LOCAL DATETIME (INTEGER);
+visCustomer = DATA LOCAL STRING[50] (INTEGER);
+visLatitude = DATA LOCAL DOUBLE (INTEGER);
+visLongitude = DATA LOCAL DOUBLE (INTEGER);
+visResult = DATA LOCAL STRING[50] (INTEGER);
+visNote = DATA LOCAL STRING (INTEGER);
+
+// closings
+cloId = DATA LOCAL STRING[40] (INTEGER);
+cloNumber = DATA LOCAL STRING[50] (INTEGER);
+cloDate = DATA LOCAL DATETIME (INTEGER);
+cloSales = DATA LOCAL NUMERIC[14,2] (INTEGER);
+cloCredit = DATA LOCAL NUMERIC[14,2] (INTEGER);
+cloReturns = DATA LOCAL NUMERIC[14,2] (INTEGER);
+cloBank = DATA LOCAL NUMERIC[14,2] (INTEGER);
+cloCashExpected = DATA LOCAL NUMERIC[14,2] (INTEGER);
+cloCashHanded = DATA LOCAL NUMERIC[14,2] (INTEGER);
+cloNote = DATA LOCAL STRING (INTEGER);
+
+cloLineClosing = DATA LOCAL INTEGER (LONG);
+cloLineItem = DATA LOCAL STRING[50] (LONG);
+cloLineExpected = DATA LOCAL NUMERIC[16,3] (LONG);
+cloLineCounted = DATA LOCAL NUMERIC[16,3] (LONG);
+
 FORM importDistribution
     OBJECTS invoices = INTEGER
     PROPERTIES(invoices) invId EXTID 'id', invNumber EXTID 'number', invDate EXTID 'date',
@@ -157,11 +278,73 @@ FORM importDistribution
     PROPERTIES(payments) payId EXTID 'id', payNumber EXTID 'number', payDate EXTID 'date',
                          payCustomer EXTID 'customer', payAmount EXTID 'amount', payMethod EXTID 'method',
                          payInvoice EXTID 'invoice', payNote EXTID 'note'
+
+    OBJECTS returns = INTEGER
+    PROPERTIES(returns) retId EXTID 'id', retNumber EXTID 'number', retDate EXTID 'date',
+                        retCustomer EXTID 'customer', retTaxIncluded EXTID 'taxIncluded',
+                        retRefund EXTID 'refund', retInvoice EXTID 'invoice', retReason EXTID 'reason'
+
+    OBJECTS returnLines = LONG
+    PROPERTIES(returnLines) retLineItem EXTID 'item', retLineQuantity EXTID 'quantity', retLinePrice EXTID 'price'
+    FILTERS retLineReturn(returnLines) = returns
+
+    OBJECTS visits = INTEGER
+    PROPERTIES(visits) visId EXTID 'id', visDate EXTID 'date', visCustomer EXTID 'customer',
+                       visLatitude EXTID 'latitude', visLongitude EXTID 'longitude',
+                       visResult EXTID 'result', visNote EXTID 'note'
+
+    OBJECTS closings = INTEGER
+    PROPERTIES(closings) cloId EXTID 'id', cloNumber EXTID 'number', cloDate EXTID 'date',
+                         cloSales EXTID 'sales', cloCredit EXTID 'credit', cloReturns EXTID 'returns',
+                         cloBank EXTID 'bank', cloCashExpected EXTID 'cashExpected',
+                         cloCashHanded EXTID 'cashHanded', cloNote EXTID 'note'
+
+    OBJECTS closingLines = LONG
+    PROPERTIES(closingLines) cloLineItem EXTID 'item', cloLineExpected EXTID 'expected', cloLineCounted EXTID 'counted'
+    FILTERS cloLineClosing(closingLines) = closings
 ;
 
 paymentType (STRING method) = IF method = 'bank' THEN bankPaymentType() ELSE cashPaymentType();
 
-// incoming payment of the distributor, matched to the given invoice or to the oldest open debts of the customer
+// Amounts and taxes of the lines are set here exactly as the app calculated and printed them
+// (untaxed = qty * price, tax = rate / (100 [+ rate if included]) * untaxed, rounded to 2 decimals),
+// so the documents and the ZATCA QR code on the server match the printed ones.
+fillLine (InvoiceLine l, Item i, NUMERIC[16,3] q, NUMERIC[10,2] p) {
+    item(l) <- i;
+    quantity(l) <- q;
+    price(l) <- p;
+    untaxedAmount(l) <- NUMERIC[14,2](q * p);
+    in(l, Tax t) <- salesIn(i, t);
+    taxAmount(Tax t, l) <- NUMERIC[14,2](value(t) / (100 (+) (value(t) IF taxIncluded(l))) * untaxedAmount(l))
+        WHERE in(l, t) AND value(t);
+}
+
+fillLine (BillLine l, Item i, NUMERIC[16,3] q, NUMERIC[10,2] p) {
+    item(l) <- i;
+    quantity(l) <- q;
+    price(l) <- p;
+    untaxedAmount(l) <- NUMERIC[14,2](q * p);
+    in(l, Tax t) <- salesIn(i, t);
+    taxAmount(Tax t, l) <- NUMERIC[14,2](value(t) / (100 (+) (value(t) IF taxIncluded(l))) * untaxedAmount(l))
+        WHERE in(l, t) AND value(t);
+}
+
+// matches an incoming debt (payment, return) to the open outgoing debts of the customer: the given invoice first,
+// then the oldest ones
+matchDebts (IncomingDebt p, Partner c, NUMERIC[14,2] amount, Invoice inv) {
+    LOCAL rest = NUMERIC[14,2] ();
+    rest() <- amount;
+    IF inv AND left(inv) > 0 THEN {
+        paid(p, inv) <- min(rest(), left(inv));
+        rest() <- rest() (-) paid(p, inv);
+    }
+    FOR active(OutgoingDebt d) AND partner(d) = c AND left(d) > 0 AND NOT d = inv AND rest() > 0
+        ORDER dateTime(d), d DO {
+        paid(p, d) <- min(rest(), left(d));
+        rest() <- rest() (-) paid(p, d);
+    }
+}
+
 newPayment (Employee e, STRING id, STRING number, DATETIME date, Partner c, NUMERIC[14,2] amount, STRING method,
             Invoice inv, STRING note) {
     NEW p = IncomingPayment {
@@ -176,20 +359,12 @@ newPayment (Employee e, STRING id, STRING number, DATETIME date, Partner c, NUME
         IF cash(type(p)) AND cashAccount(e) THEN
             companyAccount(p) <- cashAccount(e);
         done(p) <- TRUE;
-
-        LOCAL rest = NUMERIC[14,2] ();
-        rest() <- amount;
-        IF inv THEN {
-            paid(p, inv) <- min(rest(), left(inv));
-            rest() <- rest() (-) paid(p, inv);
-        }
-        FOR active(OutgoingDebt d) AND partner(d) = c AND left(d) > 0 AND NOT d = inv AND rest() > 0
-            ORDER dateTime(d), d DO {
-            paid(p, d) <- min(rest(), left(d));
-            rest() <- rest() (-) paid(p, d);
-        }
+        matchDebts(p, c, amount, inv);
     }
 }
+
+invoiceByNumber (STRING number, Partner c) = OVERRIDE invoiceMobile(number),
+    (GROUP MAX Invoice i IF number(i) = number AND customer(i) = c);
 
 uploadResult = DATA LOCAL STRING (STRING[40]);
 
@@ -197,7 +372,9 @@ upload (JSON json) {
     FOR Employee e = currentUser() AND isDistributor(e) DO {
         IMPORT importDistribution JSON FROM json;
 
-        // invoices, one session per document: an error in one document does not block the others
+        // one session per document: an error in one document does not block the others
+
+        // invoices
         FOR invId(INTEGER r) ORDER invDate(r), r DO {
             IF invoiceMobile(invId(r)) THEN
                 uploadResult(invId(r)) <- 'ok';
@@ -217,9 +394,7 @@ upload (JSON json) {
 
                     FOR lineInvoice(LONG l) = r ORDER l INLINE NEW il = InvoiceLine DO {
                         invoice(il) <- i;
-                        item(il) <- item(lineItem(l));
-                        quantity(il) <- lineQuantity(l);
-                        price(il) <- linePrice(l);
+                        fillLine(il, item(lineItem(l)), lineQuantity(l), linePrice(l));
                     }
                     ready(i) <- TRUE;
 
@@ -231,16 +406,113 @@ upload (JSON json) {
             }
         }
 
+        // returns (credit notes)
+        FOR retId(INTEGER r) ORDER retDate(r), r DO {
+            IF billMobile(retId(r)) THEN
+                uploadResult(retId(r)) <- 'ok';
+            ELSE NEWSESSION NESTED LOCAL {
+                NEW b = Bill {
+                    mobileId(b) <- retId(r);
+                    distributor(b) <- e;
+                    representative(b) <- e;
+                    type(b) <- returnBillType();
+                    number(b) <- retNumber(r);
+                    dateTime(b) <- retDate(r);
+                    vendor(b) <- partner(retCustomer(r));
+                    location(b) <- vanLocation(e);
+                    taxIncluded(b) <- retTaxIncluded(r);
+                    vendorReference(b) <- STRING[30](retInvoice(r));
+                    note(b) <- retReason(r);
+
+                    FOR retLineReturn(LONG l) = r ORDER l INLINE NEW bl = BillLine DO {
+                        bill(bl) <- b;
+                        fillLine(bl, item(retLineItem(l)), retLineQuantity(l), retLinePrice(l));
+                    }
+                    ready(b) <- TRUE;
+
+                    // the part refunded in cash is matched to the refund, the rest decreases the customer's debt
+                    IF retRefund(r) > 0 THEN NEW op = OutgoingPayment {
+                        mobileId(op) <- retId(r) + '-r';
+                        type(op) <- refundPaymentType();
+                        dateTime(op) <- retDate(r);
+                        partner(op) <- vendor(b);
+                        amount(op) <- retRefund(r);
+                        reference(op) <- retNumber(r);
+                        IF cashAccount(e) THEN
+                            companyAccount(op) <- cashAccount(e);
+                        done(op) <- TRUE;
+                        paid(b, op) <- retRefund(r);
+                    }
+                    matchDebts(b, vendor(b), amount[Bill](b) (-) retRefund(r), invoiceByNumber(retInvoice(r), vendor(b)));
+                }
+                APPLY;
+                uploadResult(retId(r)) <- IF canceled() THEN applyMessage() ELSE 'ok';
+            }
+        }
+
         // collections
         FOR payId(INTEGER r) ORDER payDate(r), r DO {
             IF incomingPaymentMobile(payId(r)) THEN
                 uploadResult(payId(r)) <- 'ok';
             ELSE NEWSESSION NESTED LOCAL {
                 newPayment(e, payId(r), payNumber(r), payDate(r), partner(payCustomer(r)), payAmount(r), payMethod(r),
-                           OVERRIDE invoiceMobile(payInvoice(r)), (GROUP MAX Invoice i IF number(i) = payInvoice(r) AND customer(i) = partner(payCustomer(r))),
-                           payNote(r));
+                           invoiceByNumber(payInvoice(r), partner(payCustomer(r))), payNote(r));
                 APPLY;
                 uploadResult(payId(r)) <- IF canceled() THEN applyMessage() ELSE 'ok';
+            }
+        }
+
+        // visits
+        FOR visId(INTEGER r) ORDER visDate(r), r DO {
+            IF visitMobile(visId(r)) THEN
+                uploadResult(visId(r)) <- 'ok';
+            ELSE NEWSESSION NESTED LOCAL {
+                NEW v = Visit {
+                    mobileId(v) <- visId(r);
+                    distributor(v) <- e;
+                    customer(v) <- partner(visCustomer(r));
+                    dateTime(v) <- visDate(r);
+                    latitude(v) <- visLatitude(r);
+                    longitude(v) <- visLongitude(r);
+                    result(v) <- visResult(r);
+                    note(v) <- visNote(r);
+                    // the first visit with a location gives the customer's coordinates
+                    IF latitude(v) AND NOT latitude(customer(v)) THEN {
+                        latitude(Partner p) <- latitude(v) WHERE p = customer(v);
+                        longitude(Partner p) <- longitude(v) WHERE p = customer(v);
+                    }
+                }
+                APPLY;
+                uploadResult(visId(r)) <- IF canceled() THEN applyMessage() ELSE 'ok';
+            }
+        }
+
+        // closings of the day
+        FOR cloId(INTEGER r) ORDER cloDate(r), r DO {
+            IF closingMobile(cloId(r)) THEN
+                uploadResult(cloId(r)) <- 'ok';
+            ELSE NEWSESSION NESTED LOCAL {
+                NEW c = Closing {
+                    mobileId(c) <- cloId(r);
+                    distributor(c) <- e;
+                    number(c) <- cloNumber(r);
+                    dateTime(c) <- cloDate(r);
+                    salesAmount(c) <- cloSales(r);
+                    creditAmount(c) <- cloCredit(r);
+                    returnsAmount(c) <- cloReturns(r);
+                    collectedBank(c) <- cloBank(r);
+                    cashExpected(c) <- cloCashExpected(r);
+                    cashHanded(c) <- cloCashHanded(r);
+                    note(c) <- cloNote(r);
+                    FOR cloLineClosing(LONG l) = r AND item(cloLineItem(l)) ORDER l INLINE NEW cl = ClosingLine DO {
+                        closing(cl) <- c;
+                        item(cl) <- item(cloLineItem(l));
+                        expected(cl) <- cloLineExpected(l);
+                        counted(cl) <- cloLineCounted(l);
+                    }
+                }
+                APPLY;
+                uploadResult(cloId(r)) <- IF canceled() THEN applyMessage() ELSE 'ok';
             }
         }
 
@@ -250,6 +522,42 @@ upload (JSON json) {
 } @@api;
 
 // ---------- forms ----------
+
+FORM visits 'Visits'
+    OBJECTS v = Visit
+    PROPERTIES(v) READONLY dateTime, nameDistributor, nameCustomer, result, note, coordinates
+    PROPERTIES(v) NEWSESSION DELETE
+    FILTERGROUP period
+        FILTER 'Today' DATE(dateTime(v)) = currentDate() DEFAULT
+;
+
+FORM closing 'Closing of the day'
+    OBJECTS c = Closing PANEL
+    PROPERTIES(c) number, dateTime, nameDistributor, salesAmount, creditAmount, returnsAmount, collectedBank,
+                  cashExpected, cashHanded, cashDifference READONLY, note
+
+    OBJECTS l = ClosingLine
+    PROPERTIES(l) nameItem, expected, counted, difference READONLY
+    FILTERS closing(l) = c
+
+    EDIT Closing OBJECT c
+;
+
+FORM closings 'Closings of the day'
+    OBJECTS c = Closing
+    PROPERTIES(c) READONLY dateTime, number, nameDistributor, salesAmount, creditAmount, returnsAmount, collectedBank,
+                           cashExpected, cashHanded, cashDifference, countDifferences
+    PROPERTIES(c) NEWSESSION EDIT, DELETE
+;
+
+NAVIGATOR {
+    invoicing {
+        operations {
+            NEW closings;
+            NEW visits;
+        }
+    }
+}
 
 EXTEND FORM MasterData.employee
     PROPERTIES(e) isDistributor, nameVanLocation SHOWIF isDistributor(e), documentPrefix SHOWIF isDistributor(e),
@@ -269,17 +577,33 @@ DESIGN MasterData.employee {
 }
 
 EXTEND FORM MasterData.partner
-    PROPERTIES(p) nameDistributor
+    PROPERTIES(p) nameDistributor, visitOrder, visitSun, visitMon, visitTue, visitWed, visitThu, visitFri, visitSat,
+                  lastVisit READONLY
 ;
 
 DESIGN MasterData.partner {
     customerOptions {
-        MOVE PROPERTY(nameDistributor(p));
+        NEW route {
+            caption = 'Route';
+            MOVE PROPERTY(nameDistributor(p));
+            NEW visitDaysBox {
+                horizontal = TRUE;
+                MOVE PROPERTY(visitSun(p));
+                MOVE PROPERTY(visitMon(p));
+                MOVE PROPERTY(visitTue(p));
+                MOVE PROPERTY(visitWed(p));
+                MOVE PROPERTY(visitThu(p));
+                MOVE PROPERTY(visitFri(p));
+                MOVE PROPERTY(visitSat(p));
+            }
+            MOVE PROPERTY(visitOrder(p));
+            MOVE PROPERTY(lastVisit(p));
+        }
     }
 }
 
 EXTEND FORM MasterData.partners
-    PROPERTIES(p) READONLY nameDistributor
+    PROPERTIES(p) READONLY nameDistributor, lastVisit
 ;
 
 EXTEND FORM Invoicing.invoices
@@ -287,7 +611,7 @@ EXTEND FORM Invoicing.invoices
 ;
 
 EXTEND FORM Invoicing.options
-    PROPERTIES() nameInvoiceType, nameCashPaymentType, nameBankPaymentType
+    PROPERTIES() nameInvoiceType, nameCashPaymentType, nameBankPaymentType, nameReturnBillType, nameRefundPaymentType
 ;
 
 DESIGN Invoicing.options {
@@ -297,6 +621,8 @@ DESIGN Invoicing.options {
             MOVE PROPERTY(nameInvoiceType());
             MOVE PROPERTY(nameCashPaymentType());
             MOVE PROPERTY(nameBankPaymentType());
+            MOVE PROPERTY(nameReturnBillType());
+            MOVE PROPERTY(nameRefundPaymentType());
         }
     }
 }
