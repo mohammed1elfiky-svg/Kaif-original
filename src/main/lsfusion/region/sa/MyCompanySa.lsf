@@ -4,7 +4,7 @@ MODULE MyCompanySa;
 // (VAT 15%, seller/buyer VAT numbers, national address, ZATCA phase 1 QR code, bilingual tax invoice)
 // To enable: logics.topModule = MyCompanySa
 
-REQUIRE MyCompany,
+REQUIRE MyCompany, DefaultData, SystemEvents,
         PartnerSa,
         TaxInitialSa,
         ZatcaQR,
@@ -12,3 +12,14 @@ REQUIRE MyCompany,
         EmployeeSa, PayrollSa, RolesSa,
         ImportShipmentSa, LotExpirySa, EcommerceSa, TrialSa,
         Distribution, DistributionInitial;
+
+// The first start of the Saudi edition loads the default data (document types, taxes, templates,
+// roles, distribution types), so a new company starts with a ready system. The result is written to
+// the server log (checked by the CI start test).
+onFirstStarted () + {
+    fillDefaultData();
+    IF GROUP SUM 1 IF InvoiceType t IS InvoiceType THEN
+        printToLog('Kaif: default data loaded', 'start', 'info');
+    ELSE
+        printToLog('Kaif: ERROR default data was not loaded: ' + (OVERRIDE applyMessage(), ''), 'start', 'error');
+}

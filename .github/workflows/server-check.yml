@@ -109,8 +109,9 @@ jobs:
             sleep 5
           done
           kill $pid 2>/dev/null || true
-          grep -E "ERROR|Exception|successfully started" start.log | head -100
+          grep -E "ERROR|Exception|successfully started|Kaif:" start.log | head -100
           grep -q "Server has successfully started" start.log
+          grep -q "Kaif: default data loaded" start.log
 
       - uses: actions/upload-artifact@v4
         if: always()
