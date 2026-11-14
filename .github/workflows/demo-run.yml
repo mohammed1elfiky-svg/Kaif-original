@@ -101,6 +101,18 @@ jobs:
           npx playwright install --with-deps chromium > /dev/null
           OUT=$GITHUB_WORKSPACE/out/screens node shots.js
 
+      - name: Images in the log (base64 JPEG, between markers)
+        if: always()
+        run: |
+          cd out
+          for f in *.png screens/*.png; do
+            [ -f "$f" ] || continue
+            convert "$f" -resize '1100x>' -quality 55 /tmp/img.jpg
+            echo "=====IMG $f"
+            base64 -w 0 /tmp/img.jpg; echo
+            echo "=====END"
+          done
+
       - name: Logs
         if: always()
         run: |

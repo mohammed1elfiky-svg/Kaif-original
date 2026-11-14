@@ -84,12 +84,20 @@ runPacking () {
     }
 }
 
+looseTea () = GROUP MAX Product p IF dataName(p) = 'شاي أسود كيني سائب (مستورد)';
+looseTeaPrice () = GROUP MAX price(InCostLedger il) IF product(il) = looseTea();
+consumedLedgers () = GROUP SUM 1 IF manufacturingOrder(line(ConsumedOutCostLedger l)) = lastPacking();
+consumedAmount () = GROUP SUM amount(ConsumedOutCostLedger l) IF manufacturingOrder(line(l)) = lastPacking();
+costBeforeRecalc = DATA NUMERIC[14,2] ();
+
 scenarioRan = DATA BOOLEAN ();
 
 runDemo () {
     IF NOT scenarioRan() THEN {
         runScenario();
         runPacking();
+        NEWSESSION { costBeforeRecalc() <- totalCost(lastPacking()); APPLY; }
+        Inventory.recalculateCost(subtract(currentDate(), 1));
         NEWSESSION { scenarioRan() <- TRUE; APPLY; }
     }
     EXPORT JSON FROM
@@ -105,6 +113,10 @@ runDemo () {
         warehouseOnHand = (GROUP SUM onHand(demoWarehouse(), Product p)),
         packingOrder = number(lastPacking()),
         packingTotalCost = totalCost(lastPacking()),
+        packingCostBeforeRecalc = costBeforeRecalc(),
+        looseTeaPrice = looseTeaPrice(),
+        consumedLedgers = consumedLedgers(),
+        consumedAmount = consumedAmount(),
         packingUnitCost = NUMERIC[14,4](totalCost(lastPacking()) / 100.0),
         packingExpectedUnitCost = 7.00,
         looseTeaLeftKg = onHand(demoWarehouse(), (GROUP MAX Product p IF dataName(p) = 'شاي أسود كيني سائب (مستورد)'));
