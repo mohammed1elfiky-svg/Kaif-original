@@ -1,0 +1,255 @@
+MODULE PayrollSa;
+
+REQUIRE EmployeeSa, PayslipLine, PayslipBatch, PayslipInitial, DefaultData, DateUtils, HumanResourcesSettings;
+
+NAMESPACE Payroll;
+
+// Payroll for the Kingdom of Saudi Arabia:
+//  - salary components of the employee (basic, housing, transport, other), prorated by the days worked
+//    in the period (hire / termination inside the period, unpaid leave)
+//  - GOSI: employee share for Saudi employees, company share (not deducted, shown for the cost)
+//  - annual, sick and unpaid leave with the balance of annual leave
+//  - salary transfer file for the bank / Mudad (WPS) from a payslip batch
+//  - end of service benefit (Labor Law, art. 84 and 85) and its provision for all employees
+
+// ---------- payslip categories ----------
+
+sidSa 'Code' = DATA STRING[20] (PayslipCategory);
+categorySa (STRING[20] sid) = GROUP AGGR PayslipCategory c BY sidSa(c);
+
+EXTEND FORM payslipCategory PROPERTIES(c) sidSa;
+
+loadDefaultData () + {
+    NEW c = PayslipCategory { sidSa(c) <- 'basic'; name(c) <- 'Basic salary'; index(c) <- 1; }
+    NEW c = PayslipCategory { sidSa(c) <- 'housing'; name(c) <- 'Housing allowance'; index(c) <- 2; }
+    NEW c = PayslipCategory { sidSa(c) <- 'transport'; name(c) <- 'Transport allowance'; index(c) <- 3; }
+    NEW c = PayslipCategory { sidSa(c) <- 'other'; name(c) <- 'Other allowances'; index(c) <- 4; }
+    NEW c = PayslipCategory { sidSa(c) <- 'absence'; name(c) <- 'Unpaid leave'; deduction(c) <- TRUE; index(c) <- 10; }
+    NEW c = PayslipCategory { sidSa(c) <- 'gosi'; name(c) <- 'GOSI (employee)'; deduction(c) <- TRUE; index(c) <- 11; }
+    NEW c = PayslipCategory { sidSa(c) <- 'gosiCompany'; name(c) <- 'GOSI (company)'; skip(c) <- TRUE; index(c) <- 20; }
+}
+
+// ---------- GOSI settings ----------
+
+dataGosiEmployeeRate 'GOSI employee rate, % (Saudi)' = DATA NUMERIC[6,3] ();
+dataGosiCompanyRateSaudi 'GOSI company rate, % (Saudi)' = DATA NUMERIC[6,3] ();
+dataGosiCompanyRateForeign 'GOSI company rate, % (non-Saudi)' = DATA NUMERIC[6,3] ();
+dataGosiMaxBase 'GOSI maximum contribution base' = DATA NUMERIC[14,2] ();
+
+// annuities 9% + SANED 0.75% for the employee; annuities 9% + occupational hazards 2% + SANED 0.75% for the company;
+// occupational hazards 2% for non-Saudi employees. Check the current rates of GOSI and change them in the settings.
+gosiEmployeeRate () = OVERRIDE dataGosiEmployeeRate(), 9.75;
+gosiCompanyRateSaudi () = OVERRIDE dataGosiCompanyRateSaudi(), 11.75;
+gosiCompanyRateForeign () = OVERRIDE dataGosiCompanyRateForeign(), 2.0;
+gosiMaxBase () = OVERRIDE dataGosiMaxBase(), 45000.0;
+
+// contribution base: basic salary + housing allowance, up to the maximum
+gosiBase 'GOSI base' (Employee e) = min(basicSalarySa(e) (+) housingAllowanceSa(e), gosiMaxBase());
+
+EXTEND FORM HumanResources.options
+    PROPERTIES() dataGosiEmployeeRate, dataGosiCompanyRateSaudi, dataGosiCompanyRateForeign, dataGosiMaxBase
+;
+
+DESIGN HumanResources.options {
+    tabbedPane {
+        NEW gosi {
+            caption = 'GOSI';
+            MOVE PROPERTY(dataGosiEmployeeRate());
+            MOVE PROPERTY(dataGosiCompanyRateSaudi());
+            MOVE PROPERTY(dataGosiCompanyRateForeign());
+            MOVE PROPERTY(dataGosiMaxBase());
+        }
+    }
+}
+
+// ---------- leave ----------
+
+CLASS LeaveTypeSa 'Leave type' {
+    annual 'Annual leave',
+    sick 'Sick leave',
+    unpaid 'Unpaid leave',
+    hajj 'Hajj leave',
+    maternity 'Maternity leave',
+    other 'Other leave'
+}
+
+CLASS LeaveSa 'Leave';
+employee = DATA Employee (LeaveSa) NONULL DELETE;
+nameEmployee 'Employee' (LeaveSa l) = name(employee(l));
+type = DATA LeaveTypeSa (LeaveSa) NONULL;
+nameType 'Leave type' (LeaveSa l) = staticCaption(type(l));
+dateFrom 'Date from' = DATA DATE (LeaveSa) NONULL;
+dateTo 'Date to' = DATA DATE (LeaveSa) NONULL;
+days 'Days' (LeaveSa l) = daysBetweenDates(dateTo(l), dateFrom(l)) + 1;
+note 'Note' = DATA ISTRING[200] (LeaveSa);
+
+CONSTRAINT dateTo(LeaveSa l) < dateFrom(l) MESSAGE 'The end of the leave cannot be earlier than its start';
+
+// days of a leave type inside a period
+leaveDays (Employee e, LeaveTypeSa t, DATE df, DATE dt) =
+    GROUP SUM daysBetweenDates(min(dateTo(LeaveSa l), dt), max(dateFrom(l), df)) + 1
+        IF employee(l) = e AND type(l) = t AND dateFrom(l) <= dt AND dateTo(l) >= df;
+
+// annual leave balance: accrued for the years of service minus the annual leave taken
+accruedLeaveSa 'Accrued leave days' (Employee e) = NUMERIC[8,2](annualLeaveDaysSa(e) * serviceYearsSa(e));
+takenLeaveSa 'Taken leave days' (Employee e) = GROUP SUM days(LeaveSa l) IF employee(l) = e AND type(l) = LeaveTypeSa.annual;
+leaveBalanceSa 'Leave balance (days)' (Employee e) = accruedLeaveSa(e) (-) takenLeaveSa(e);
+
+FORM leaveSa 'Leave'
+    OBJECTS l = LeaveSa PANEL
+    PROPERTIES(l) nameEmployee, nameType, dateFrom, dateTo, days READONLY, note
+    EDIT LeaveSa OBJECT l
+;
+
+FORM leavesSa 'Leaves'
+    OBJECTS l = LeaveSa
+    PROPERTIES(l) READONLY nameEmployee, nameType, dateFrom, dateTo, days, note
+    PROPERTIES(l) NEWSESSION NEW, EDIT, DELETE
+    ORDERS dateFrom(l) DESC
+;
+
+EXTEND FORM MasterData.employee
+    PROPERTIES(e) READONLY accruedLeaveSa, takenLeaveSa, leaveBalanceSa
+
+    OBJECTS lv = LeaveSa
+    PROPERTIES(lv) READONLY nameType, dateFrom, dateTo, days, note
+    PROPERTIES(lv) NEWSESSION NEW, EDIT, DELETE
+    FILTERS employee(lv) = e
+;
+
+DESIGN MasterData.employee {
+    saudi {
+        NEW leaves {
+            caption = 'Leaves';
+            NEW leaveBalance {
+                horizontal = TRUE;
+                MOVE PROPERTY(accruedLeaveSa(e));
+                MOVE PROPERTY(takenLeaveSa(e));
+                MOVE PROPERTY(leaveBalanceSa(e));
+            }
+            MOVE BOX(lv);
+        }
+    }
+}
+
+// ---------- payroll calculation ----------
+
+periodDays (Payslip p) = daysBetweenDates(endDate(p), startDate(p)) + 1;
+
+// days of the period between the hire and the termination dates
+employedDays (Payslip p) = daysBetweenDates(min(endDate(p), (OVERRIDE terminationDateSa(employee(p)), endDate(p))),
+                                            max(startDate(p), (OVERRIDE hireDateSa(employee(p)), startDate(p)))) + 1;
+
+unpaidDays 'Unpaid leave days' (Payslip p) = leaveDays(employee(p), LeaveTypeSa.unpaid, startDate(p), endDate(p));
+
+ratioSa (Payslip p) = max(employedDays(p), 0) / periodDays(p);
+
+// daily wage for the unpaid leave: monthly salary / 30
+dailyWageSa (Employee e) = totalSalarySa(e) / 30.0;
+
+setLineSa (Payslip p, STRING[20] sid, NUMERIC[12,2] value, NUMERIC[8,2] qty) {
+    FOR PayslipCategory c = categorySa(sid) DO {
+        IF value THEN {
+            IF NOT line(p, c) THEN NEW l = PayslipLine {
+                payslip(l) <- p;
+                category(l) <- c;
+            }
+            total(PayslipLine l) <- value WHERE l = line(p, c);
+            quantity(PayslipLine l) <- qty WHERE l = line(p, c);
+        } ELSE
+            DELETE PayslipLine l WHERE payslip(l) = p AND category(l) = c;
+    }
+}
+
+generate (Payslip p) + {
+    FOR Employee e = employee(p) AND totalSalarySa(e) AND periodDays(p) > 0 DO {
+        LOCAL ratio = NUMERIC[10,6] ();
+        ratio() <- ratioSa(p);
+        setLineSa(p, 'basic', NUMERIC[12,2](basicSalarySa(e) * ratio()), NULL);
+        setLineSa(p, 'housing', NUMERIC[12,2](housingAllowanceSa(e) * ratio()), NULL);
+        setLineSa(p, 'transport', NUMERIC[12,2](transportAllowanceSa(e) * ratio()), NULL);
+        setLineSa(p, 'other', NUMERIC[12,2](otherAllowanceSa(e) * ratio()), NULL);
+        setLineSa(p, 'absence', NUMERIC[12,2](dailyWageSa(e) * unpaidDays(p)), NUMERIC[8,2](unpaidDays(p)));
+        setLineSa(p, 'gosi', NUMERIC[12,2](gosiBase(e) * ratio() * gosiEmployeeRate() / 100.0) IF isSaudiSa(e), NULL);
+        setLineSa(p, 'gosiCompany',
+                  NUMERIC[12,2](gosiBase(e) * ratio() * (IF isSaudiSa(e) THEN gosiCompanyRateSaudi() ELSE gosiCompanyRateForeign()) / 100.0),
+                  NULL);
+    }
+}
+
+// ---------- salary transfer file (WPS / Mudad) ----------
+
+exportWpsSa 'Salary transfer file (WPS)' (PayslipBatch b) {
+    LOCAL f = EXCELFILE ();
+    EXPORT XLSX HEADER FROM
+        'Employee ID / Iqama' = idNumberSa(employee(Payslip p)),
+        'Employee name' = name(employee(p)),
+        'Bank' = bic(bankSa(employee(p))),
+        'IBAN' = ibanSa(employee(p)),
+        'Basic salary' = total(p, categorySa('basic')),
+        'Housing allowance' = total(p, categorySa('housing')),
+        'Other earnings' = total(p, categorySa('transport')) (+) total(p, categorySa('other')),
+        'Deductions' = total(p, categorySa('absence')) (+) total(p, categorySa('gosi')),
+        'Net salary' = netWage(p),
+        'Period' = name(batch(p))
+        WHERE batch(p) = b
+        TO f;
+    open(f(), 'WPS-' + (OVERRIDE number(b), ''));
+}
+
+EXTEND FORM payslipBatch
+    PROPERTIES(b) exportWpsSa
+;
+
+// ---------- end of service benefit ----------
+
+eosWageSa 'Wage for the end of service' (Employee e) = totalSalarySa(e);
+
+// full benefit (termination by the employer, end of contract): half a month for each of the first
+// five years, a month for each next year (art. 84)
+eosFullSa (Employee e, DATE d) = NUMERIC[14,2](eosWageSa(e) *
+    (IF serviceYearsSa(e, d) <= 5 THEN serviceYearsSa(e, d) * 0.5 ELSE 2.5 + (serviceYearsSa(e, d) - 5)));
+
+// resignation (art. 85): nothing under 2 years, a third from 2 to 5 years, two thirds from 5 to 10 years, all after
+eosResignationRatioSa (Employee e, DATE d) =
+    CASE WHEN serviceYearsSa(e, d) < 2 THEN 0.0
+         WHEN serviceYearsSa(e, d) < 5 THEN 1.0 / 3
+         WHEN serviceYearsSa(e, d) < 10 THEN 2.0 / 3
+         ELSE 1.0;
+eosResignationSa (Employee e, DATE d) = NUMERIC[14,2](eosFullSa(e, d) * eosResignationRatioSa(e, d));
+
+eosFullSa 'End of service (termination)' (Employee e) = eosFullSa(e, (OVERRIDE terminationDateSa(e), currentDate()));
+eosResignationSa 'End of service (resignation)' (Employee e) = eosResignationSa(e, (OVERRIDE terminationDateSa(e), currentDate()));
+
+EXTEND FORM MasterData.employee
+    PROPERTIES(e) READONLY eosFullSa, eosResignationSa
+;
+
+DESIGN MasterData.employee {
+    employment {
+        MOVE PROPERTY(eosFullSa(e));
+        MOVE PROPERTY(eosResignationSa(e));
+    }
+}
+
+// provision for the end of service benefits of the active employees as of a date
+FORM eosProvisionSa 'End of service provision'
+    OBJECTS d = DATE PANEL
+    PROPERTIES dt 'Date' = VALUE(d)
+
+    OBJECTS e = Employee
+    PROPERTIES(e) READONLY name, nameNationality, hireDateSa, eosWageSa
+    PROPERTIES READONLY serviceYearsSa(e, d), eosFullSa(e, d), eosResignationSa(e, d)
+    FILTERS active(e), hireDateSa(e), hireDateSa(e) <= d
+
+    EVENTS ON INIT { SEEK eosProvisionSa.d = currentDate(); }
+;
+
+NAVIGATOR {
+    humanResources {
+        operations {
+            NEW leavesSa;
+            NEW eosProvisionSa;
+        }
+    }
+}

@@ -1,0 +1,83 @@
+MODULE RolesSa;
+
+REQUIRE Security, Reflection, Authentication, DefaultData;
+
+NAMESPACE Security;
+
+// Default user roles of Al-Kaif Al-Asli with access to the sections of the menu they need.
+// A role forbids the whole menu (System.root) and permits its sections; the administrator can change
+// them in Administration -> Users -> Roles, and give a user several roles.
+//   manager      - the whole system except the administration
+//   accountant   - invoicing, accounting, purchases, sales (reports), payroll
+//   warehouse    - inventory, manufacturing (packing), purchases (receipts)
+//   sales        - sales, CRM, master data
+//   cashier      - the cash register only
+//   hr           - human resources and payroll
+//   distributor  - nothing in the menu: works only through the distributor app
+
+permitSa (UserRole r, STRING element) {
+    FOR NavigatorElement e = navigatorElementCanonicalName(element) DO
+        dataPermission(r, e) <- Permission.permit;
+}
+
+forbidSa (UserRole r, STRING element) {
+    FOR NavigatorElement e = navigatorElementCanonicalName(element) DO
+        dataPermission(r, e) <- Permission.forbid;
+}
+
+newRoleSa (STRING[30] sid, ISTRING[100] name) {
+    IF NOT userRoleSID(sid) THEN NEW r = UserRole {
+        sid(r) <- sid;
+        name(r) <- name;
+        forbidSa(r, 'System.root');
+        permitSa(r, 'Authentication.account');
+        permitSa(r, 'Dashboard.dashboard');
+    }
+}
+
+createRolesSa 'Create default roles' () {
+    newRoleSa('manager', 'مدير');
+    newRoleSa('accountant', 'محاسب');
+    newRoleSa('warehouse', 'أمين مستودع');
+    newRoleSa('sales', 'مبيعات');
+    newRoleSa('cashier', 'كاشير');
+    newRoleSa('hr', 'موارد بشرية');
+    newRoleSa('distributor', 'موزع');
+
+    FOR UserRole r = userRoleSID('manager') DO {
+        permitSa(r, 'System.root');
+        forbidSa(r, 'System.administration');
+    }
+    FOR UserRole r = userRoleSID('accountant') DO {
+        permitSa(r, 'Invoicing.invoicing');
+        permitSa(r, 'Accounting.accounting');
+        permitSa(r, 'Purchase.purchase');
+        permitSa(r, 'Sales.sales');
+        permitSa(r, 'HumanResources.humanResources');
+    }
+    FOR UserRole r = userRoleSID('warehouse') DO {
+        permitSa(r, 'Inventory.stock');
+        permitSa(r, 'Manufacturing.manufacturing');
+        permitSa(r, 'Purchase.purchase');
+    }
+    FOR UserRole r = userRoleSID('sales') DO {
+        permitSa(r, 'Sales.sales');
+        permitSa(r, 'CRM.crm');
+        permitSa(r, 'MasterData.masterData');
+    }
+    FOR UserRole r = userRoleSID('cashier') DO {
+        permitSa(r, 'Retail.retail');
+    }
+    FOR UserRole r = userRoleSID('hr') DO {
+        permitSa(r, 'HumanResources.humanResources');
+    }
+    // the distributor role keeps only the account (password change): the app uses the API
+    FOR UserRole r = userRoleSID('distributor') DO {
+        forbidSa(r, 'Dashboard.dashboard');
+    }
+    APPLY;
+}
+
+onStarted () + {
+    IF NOT userRoleSID('accountant') THEN NEWSESSION createRolesSa();
+}

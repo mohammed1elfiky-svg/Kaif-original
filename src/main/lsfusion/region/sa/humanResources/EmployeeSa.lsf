@@ -1,0 +1,143 @@
+MODULE EmployeeSa;
+
+REQUIRE Employee, Bank, CountryP, DateUtils, HumanResourcesSettings;
+
+NAMESPACE MasterData;
+
+// Employee data for the Kingdom of Saudi Arabia: nationality, ID / iqama and passport with their
+// expiry dates, hire and termination dates, monthly salary components (basis of the payroll, GOSI and
+// the end of service benefit) and the bank account for the salary transfer (WPS).
+
+nationality = DATA Country (Employee);
+nameNationality 'Nationality' (Employee e) = name(nationality(e));
+isSaudiSa 'Saudi' (Employee e) = alpha2(nationality(e)) = 'SA' OR id(nationality(e)) = 'SA' OR id(nationality(e)) = '682';
+
+idNumberSa 'ID / Iqama number' = DATA STRING[10] (Employee) CHARWIDTH 10;
+idExpirySa 'ID / Iqama expiry' = DATA DATE (Employee);
+passportNumberSa 'Passport number' = DATA STRING[20] (Employee) CHARWIDTH 10;
+passportExpirySa 'Passport expiry' = DATA DATE (Employee);
+
+CONSTRAINT idNumberSa(Employee e) AND NOT idNumberSa(e) = regexpReplace(idNumberSa(e), '[^0-9]', '', 'g')
+    MESSAGE 'The ID / iqama number must contain digits only';
+
+hireDateSa 'Hire date' = DATA DATE (Employee);
+terminationDateSa 'Termination date' = DATA DATE (Employee);
+
+CONSTRAINT terminationDateSa(Employee e) < hireDateSa(e)
+    MESSAGE 'The termination date cannot be earlier than the hire date';
+
+// monthly salary
+basicSalarySa 'Basic salary' = DATA NUMERIC[14,2] (Employee);
+housingAllowanceSa 'Housing allowance' = DATA NUMERIC[14,2] (Employee);
+transportAllowanceSa 'Transport allowance' = DATA NUMERIC[14,2] (Employee);
+otherAllowanceSa 'Other allowances' = DATA NUMERIC[14,2] (Employee);
+totalSalarySa 'Total salary' (Employee e) =
+    basicSalarySa(e) (+) housingAllowanceSa(e) (+) transportAllowanceSa(e) (+) otherAllowanceSa(e);
+
+// salary transfer (WPS)
+bankSa = DATA Bank (Employee);
+nameBankSa 'Bank' (Employee e) = name(bankSa(e));
+ibanSa 'IBAN' = DATA STRING[24] (Employee) CHARWIDTH 24;
+
+validIbanSa = FORMULA INTEGER '(CASE WHEN ($1) ~ \'^SA[0-9]\{22\}$\' THEN 1 END)';
+CONSTRAINT ibanSa(Employee e) AND NOT validIbanSa(ibanSa(e))
+    MESSAGE 'A Saudi IBAN consists of SA and 22 digits';
+
+// length of service
+serviceDaysSa (Employee e, DATE d) = daysBetweenDates(min(d, (OVERRIDE terminationDateSa(e), d)), hireDateSa(e)) + 1 IF hireDateSa(e) <= d;
+serviceYearsSa 'Years of service' (Employee e, DATE d) = NUMERIC[8,2](serviceDaysSa(e, d) / 365.0);
+serviceYearsSa 'Years of service' (Employee e) = serviceYearsSa(e, currentDate());
+
+// annual leave: 21 days, 30 days after 5 years of service (Labor Law, art. 109)
+dataAnnualLeaveDaysSa 'Annual leave days' = DATA INTEGER (Employee);
+annualLeaveDaysSa 'Annual leave days' (Employee e) =
+    OVERRIDE dataAnnualLeaveDaysSa(e), (30 IF serviceYearsSa(e) >= 5), 21 IF e IS Employee;
+
+// expiry of documents
+daysToIdExpirySa 'Days to ID / iqama expiry' (Employee e) = daysBetweenDates(idExpirySa(e), currentDate());
+daysToPassportExpirySa 'Days to passport expiry' (Employee e) = daysBetweenDates(passportExpirySa(e), currentDate());
+
+expiryWarningDaysSa 'Warn about expiring documents (days)' = DATA INTEGER ();
+expiryWarningDays () = OVERRIDE expiryWarningDaysSa(), 60;
+
+expiringSa (Employee e) = active(e) AND
+    (daysToIdExpirySa(e) <= expiryWarningDays() OR daysToPassportExpirySa(e) <= expiryWarningDays());
+countExpiringSa 'Expiring documents' () = GROUP SUM 1 IF expiringSa(Employee e);
+
+colorExpirySa (DATE d) = IF d < currentDate() THEN RGB(255, 180, 180)
+                         ELSE (RGB(255, 230, 160) IF daysBetweenDates(d, currentDate()) <= expiryWarningDays());
+
+EXTEND FORM employee
+    PROPERTIES(e) nameNationality, isSaudiSa READONLY, idNumberSa, idExpirySa BACKGROUND colorExpirySa(idExpirySa(e)),
+                  passportNumberSa, passportExpirySa BACKGROUND colorExpirySa(passportExpirySa(e)),
+                  hireDateSa, terminationDateSa, serviceYearsSa READONLY,
+                  basicSalarySa, housingAllowanceSa, transportAllowanceSa, otherAllowanceSa, totalSalarySa READONLY,
+                  nameBankSa, ibanSa, annualLeaveDaysSa
+;
+
+DESIGN employee {
+    details {
+        NEW saudi {
+            caption = 'Employment (Saudi Arabia)';
+            NEW identity {
+                caption = 'Identity';
+                horizontal = TRUE;
+                lines = 3;
+                MOVE PROPERTY(nameNationality(e));
+                MOVE PROPERTY(isSaudiSa(e));
+                MOVE PROPERTY(idNumberSa(e));
+                MOVE PROPERTY(idExpirySa(e));
+                MOVE PROPERTY(passportNumberSa(e));
+                MOVE PROPERTY(passportExpirySa(e));
+            }
+            NEW employment {
+                caption = 'Employment';
+                horizontal = TRUE;
+                MOVE PROPERTY(hireDateSa(e));
+                MOVE PROPERTY(terminationDateSa(e));
+                MOVE PROPERTY(serviceYearsSa(e));
+                MOVE PROPERTY(annualLeaveDaysSa(e));
+            }
+            NEW salary {
+                caption = 'Monthly salary';
+                horizontal = TRUE;
+                MOVE PROPERTY(basicSalarySa(e));
+                MOVE PROPERTY(housingAllowanceSa(e));
+                MOVE PROPERTY(transportAllowanceSa(e));
+                MOVE PROPERTY(otherAllowanceSa(e));
+                MOVE PROPERTY(totalSalarySa(e));
+            }
+            NEW bankTransfer {
+                caption = 'Salary transfer';
+                horizontal = TRUE;
+                MOVE PROPERTY(nameBankSa(e));
+                MOVE PROPERTY(ibanSa(e));
+            }
+        }
+    }
+}
+
+EXTEND FORM employees
+    PROPERTIES(e) READONLY nameNationality, idNumberSa, idExpirySa BACKGROUND colorExpirySa(idExpirySa(e)), hireDateSa, totalSalarySa
+;
+
+// documents expiring soon (or expired)
+FORM expiringDocumentsSa 'Expiring documents'
+    PROPERTIES() expiryWarningDaysSa
+
+    OBJECTS e = Employee
+    PROPERTIES(e) READONLY name, nameNationality, idNumberSa, idExpirySa BACKGROUND colorExpirySa(idExpirySa(e)),
+                           daysToIdExpirySa, passportNumberSa, passportExpirySa BACKGROUND colorExpirySa(passportExpirySa(e)),
+                           daysToPassportExpirySa
+    PROPERTIES(e) NEWSESSION EDIT
+    FILTERS expiringSa(e)
+    ORDERS daysToIdExpirySa(e)
+;
+
+NAVIGATOR {
+    humanResources {
+        operations {
+            NEW expiringDocumentsSa;
+        }
+    }
+}

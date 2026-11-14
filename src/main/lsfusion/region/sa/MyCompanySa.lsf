@@ -9,4 +9,5 @@ REQUIRE MyCompany,
         TaxInitialSa,
         ZatcaQR,
         InvoicePrintSa, InvoicePrintInitialSa, VatReturnSa, PosReceiptSa,
+        EmployeeSa, PayrollSa, RolesSa,
         Distribution;
