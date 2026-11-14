@@ -59,6 +59,7 @@ jobs:
             sleep 5
           done
           grep -E "ERROR|successfully started|Kaif:" server.log | head -50
+          grep -A3 "\[error\]" server.log | head -80 || true
           grep -q "Server has successfully started" server.log
 
       - uses: docker/login-action@v3
