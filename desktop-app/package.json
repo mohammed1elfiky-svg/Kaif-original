@@ -1,0 +1,46 @@
+{
+  "name": "alkaif-desktop",
+  "productName": "Al-Kaif Al-Asli",
+  "version": "1.0.0",
+  "description": "Al-Kaif Al-Asli - Windows desktop app of the ERP system",
+  "author": "Al-Kaif Al-Asli",
+  "license": "Apache-2.0",
+  "private": true,
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test \"test/**/*.test.js\"",
+    "dist": "electron-builder --win --publish never"
+  },
+  "devDependencies": {
+    "electron": "44.9.3",
+    "electron-builder": "26.18.0"
+  },
+  "dependencies": {
+    "electron-updater": "6.8.11"
+  },
+  "build": {
+    "appId": "sa.alkaif.desktop",
+    "productName": "Al-Kaif Al-Asli",
+    "copyright": "Al-Kaif Al-Asli",
+    "directories": { "output": "dist", "buildResources": "build" },
+    "files": ["src/**/*", "package.json"],
+    "win": {
+      "target": [{ "target": "nsis", "arch": ["x64"] }],
+      "icon": "build/icon.ico",
+      "artifactName": "AlKaif-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "الكيف الأصلي",
+      "uninstallDisplayName": "الكيف الأصلي",
+      "installerLanguages": ["ar_SA", "en_US"],
+      "language": "1025"
+    },
+    "publish": [{ "provider": "github", "owner": "mohammed1elfiky-svg", "repo": "Kaif-original", "releaseType": "release" }]
+  }
+}

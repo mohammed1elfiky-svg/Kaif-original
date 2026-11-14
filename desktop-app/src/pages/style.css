@@ -1,0 +1,55 @@
+:root {
+  --green: #1F3B2C;
+  --leaf: #52B051;
+  --cream: #FFF9EB;
+  --danger: #B3261E;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body {
+  background: var(--cream);
+  color: #1b1b1b;
+  font-family: "Segoe UI", Tahoma, Arial, sans-serif;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.card {
+  background: #fff;
+  width: min(460px, 92vw);
+  padding: 32px;
+  border-radius: 16px;
+  box-shadow: 0 8px 30px rgba(31, 59, 44, 0.12);
+  text-align: center;
+}
+.card img { width: 140px; height: 140px; }
+h1 { color: var(--green); font-size: 22px; margin: 12px 0 4px; }
+p { color: #555; margin: 4px 0 20px; line-height: 1.6; }
+label { display: block; text-align: right; font-weight: 600; margin-bottom: 6px; color: var(--green); }
+input {
+  width: 100%;
+  padding: 12px;
+  font-size: 16px;
+  border: 1px solid #c9c9c9;
+  border-radius: 8px;
+  direction: ltr;
+  text-align: left;
+}
+input:focus { outline: 2px solid var(--leaf); border-color: var(--leaf); }
+button {
+  width: 100%;
+  margin-top: 14px;
+  padding: 12px;
+  font-size: 16px;
+  border: 0;
+  border-radius: 24px;
+  background: var(--green);
+  color: #fff;
+  cursor: pointer;
+  font-family: inherit;
+}
+button.secondary { background: transparent; color: var(--green); border: 1px solid var(--green); }
+button:disabled { opacity: 0.6; cursor: wait; }
+.error { color: var(--danger); margin-top: 12px; min-height: 1.4em; white-space: pre-line; }
+.hint { font-size: 13px; color: #777; margin-top: 8px; text-align: right; }
+.detail { direction: ltr; font-size: 12px; color: #999; margin-top: 16px; word-break: break-all; }

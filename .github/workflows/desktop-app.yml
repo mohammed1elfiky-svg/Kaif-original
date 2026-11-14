@@ -1,0 +1,66 @@
+# Builds the Windows desktop app (desktop-app/): tests and the installer AlKaif-Setup-x.y.z.exe.
+#  - every push / pull request that changes the app: the installer is attached to the run (Actions -> run -> Artifacts)
+#  - a tag "desktop-v1.2.0": a GitHub release with the installer, version 1.2.0; installed apps update themselves from it
+#  - manual start: Actions -> Desktop app -> Run workflow
+name: Desktop app
+
+on:
+  push:
+    branches: ['**']
+    tags: ['desktop-v*']
+    paths: ['desktop-app/**', '.github/workflows/desktop-app.yml']
+  pull_request:
+    paths: ['desktop-app/**', '.github/workflows/desktop-app.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: desktop-app-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: desktop-app
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: desktop-app/package-lock.json
+
+      - name: Dependencies
+        run: npm ci
+
+      - name: Tests
+        run: npm test
+
+      - name: Version
+        if: startsWith(github.ref, 'refs/tags/desktop-v')
+        run: npm version "${GITHUB_REF#refs/tags/desktop-v}" --no-git-tag-version --allow-same-version
+
+      - name: Build installer
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/desktop-v* ]]; then
+            npx electron-builder --win --publish always
+          else
+            npx electron-builder --win --publish never
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: alkaif-desktop-setup
+          path: |
+            desktop-app/dist/*.exe
+            desktop-app/dist/latest.yml
+          retention-days: 30

@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self'; img-src 'self'; script-src 'self'">
+  <title>الكيف الأصلي</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <form class="card" id="form">
+    <img src="logo.png" alt="">
+    <h1>الكيف الأصلي</h1>
+    <p>أدخل عنوان خادم النظام للبدء</p>
+    <label for="server">عنوان الخادم</label>
+    <input id="server" placeholder="https://erp.example.sa" autocomplete="url" required autofocus>
+    <div class="hint">مثال: https://erp.alkaif.sa أو http://192.168.1.10:8080</div>
+    <div class="error" id="error"></div>
+    <button type="submit" id="save">اتصال</button>
+    <button type="button" class="secondary" id="force" hidden>حفظ العنوان على أي حال</button>
+  </form>
+  <script src="setup.js"></script>
+</body>
+</html>
