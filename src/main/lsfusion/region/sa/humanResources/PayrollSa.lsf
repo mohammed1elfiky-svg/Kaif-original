@@ -91,7 +91,11 @@ leaveDays (Employee e, LeaveTypeSa t, DATE df, DATE dt) =
         IF employee(l) = e AND type(l) = t AND dateFrom(l) <= dt AND dateTo(l) >= df;
 
 // annual leave balance: accrued for the years of service minus the annual leave taken
-accruedLeaveSa 'Accrued leave days' (Employee e) = NUMERIC[8,2](annualLeaveDaysSa(e) * serviceYearsSa(e));
+// 21 days a year for the first 5 years and 30 days for the next ones (Labor Law, art. 109),
+// or the days set for the employee for all the years
+accruedLeaveSa 'Accrued leave days' (Employee e) = NUMERIC[8,2](
+    IF dataAnnualLeaveDaysSa(e) THEN dataAnnualLeaveDaysSa(e) * serviceYearsSa(e)
+    ELSE 21 * min(serviceYearsSa(e), 5.0) (+) 30 * max(serviceYearsSa(e) (-) 5.0, 0.0));
 takenLeaveSa 'Taken leave days' (Employee e) = GROUP SUM days(LeaveSa l) IF employee(l) = e AND type(l) = LeaveTypeSa.annual;
 leaveBalanceSa 'Leave balance (days)' (Employee e) = accruedLeaveSa(e) (-) takenLeaveSa(e);
 
@@ -142,7 +146,7 @@ employedDays (Payslip p) = daysBetweenDates(min(endDate(p), (OVERRIDE terminatio
 
 unpaidDays 'Unpaid leave days' (Payslip p) = leaveDays(employee(p), LeaveTypeSa.unpaid, startDate(p), endDate(p));
 
-ratioSa (Payslip p) = max(employedDays(p), 0) / periodDays(p);
+ratioSa (Payslip p) = NUMERIC[10,6](max(employedDays(p), 0)) / NUMERIC[10,6](periodDays(p));
 
 // daily wage for the unpaid leave: monthly salary / 30
 dailyWageSa (Employee e) = totalSalarySa(e) / 30.0;

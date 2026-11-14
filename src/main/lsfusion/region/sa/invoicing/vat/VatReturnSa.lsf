@@ -1,6 +1,6 @@
 MODULE VatReturnSa;
 
-REQUIRE Invoice, InvoiceTax, InvoiceCanceled, Bill, BillCanceled, CreditNote, Refund, Tax, TaxGroup, Company, DateUtils;
+REQUIRE Invoice, InvoiceTax, InvoiceCanceled, Bill, BillCanceled, CreditNote, Refund, Tax, TaxGroup, Company, DateUtils, InvoiceCurrency, BillCurrency, PartnerSa;
 
 NAMESPACE Invoicing;
 
@@ -45,15 +45,18 @@ foreignSa (Partner p) = country(p) AND NOT (alpha2(country(p)) = 'SA' OR id(coun
 inPeriodSa (Invoice i, Company c, DATE df, DATE dt) = active(i) AND company(i) = c AND date(i) >= df AND date(i) <= dt;
 inPeriodSa (Bill b, Company c, DATE df, DATE dt) = active(b) AND company(b) = c AND date(b) >= df AND date(b) <= dt;
 
-netSa (Tax t, Invoice i) = amount(t, i) (-) taxAmount(t, i);
-netSa (Tax t, Bill b) = amount(t, b) (-) taxAmount(t, b);
+// amounts in SAR: documents in a foreign currency by the exchange rate of the document
+netSa (Tax t, Invoice i) = NUMERIC[14,2]((amount(t, i) (-) taxAmount(t, i)) * rate1(i));
+netSa (Tax t, Bill b) = NUMERIC[14,2]((amount(t, b) (-) taxAmount(t, b)) * rate1(b));
+vatSa (Tax t, Invoice i) = NUMERIC[14,2](taxAmount(t, i) * rate1(i));
+vatSa (Tax t, Bill b) = NUMERIC[14,2](taxAmount(t, b) * rate1(b));
 
 // sales by category (customer invoices, not refunds to vendors), domestic
 salesNet (VatCategorySa k, Company c, DATE df, DATE dt) =
     GROUP SUM netSa(Tax t, Invoice i) IF inPeriodSa(i, c, df, dt) AND NOT isRefund(i) AND isVatSa(t)
         AND vatCategorySa(t) = k AND NOT foreignSa(customer(i));
 salesVat (VatCategorySa k, Company c, DATE df, DATE dt) =
-    GROUP SUM taxAmount(Tax t, Invoice i) IF inPeriodSa(i, c, df, dt) AND NOT isRefund(i) AND isVatSa(t)
+    GROUP SUM vatSa(Tax t, Invoice i) IF inPeriodSa(i, c, df, dt) AND NOT isRefund(i) AND isVatSa(t)
         AND vatCategorySa(t) = k AND NOT foreignSa(customer(i));
 
 // customer credit notes by category, domestic (negative adjustments of sales)
@@ -61,7 +64,7 @@ creditNotesNet (VatCategorySa k, Company c, DATE df, DATE dt) =
     GROUP SUM netSa(Tax t, Bill b) IF inPeriodSa(b, c, df, dt) AND isCreditNote(b) AND isVatSa(t)
         AND vatCategorySa(t) = k AND NOT foreignSa(vendor(b));
 creditNotesVat (VatCategorySa k, Company c, DATE df, DATE dt) =
-    GROUP SUM taxAmount(Tax t, Bill b) IF inPeriodSa(b, c, df, dt) AND isCreditNote(b) AND isVatSa(t)
+    GROUP SUM vatSa(Tax t, Bill b) IF inPeriodSa(b, c, df, dt) AND isCreditNote(b) AND isVatSa(t)
         AND vatCategorySa(t) = k AND NOT foreignSa(vendor(b));
 
 // exports (sales to foreign customers) and their credit notes
@@ -70,29 +73,32 @@ exportsNet (Company c, DATE df, DATE dt) =
 exportsCreditNotesNet (Company c, DATE df, DATE dt) =
     GROUP SUM netSa(Tax t, Bill b) IF inPeriodSa(b, c, df, dt) AND isCreditNote(b) AND isVatSa(t) AND foreignSa(vendor(b));
 
-// domestic purchases by category (vendor bills, not credit notes, not imports)
-domesticBillSa (Bill b) = NOT isCreditNote(b) AND NOT importVatSa(type(b)) AND NOT reverseChargeSa(type(b));
+// domestic purchases by category (vendor bills, not credit notes, not imports): the invoices of foreign
+// suppliers are not purchases of the return, their goods are declared with the VAT paid at customs (box 8)
+// or by reverse charge (box 9)
+domesticBillSa (Bill b) = NOT isCreditNote(b) AND NOT importVatSa(type(b)) AND NOT reverseChargeSa(type(b))
+    AND NOT foreignSa(vendor(b));
 
 purchasesNet (VatCategorySa k, Company c, DATE df, DATE dt) =
     GROUP SUM netSa(Tax t, Bill b) IF inPeriodSa(b, c, df, dt) AND domesticBillSa(b) AND isVatSa(t) AND vatCategorySa(t) = k;
 purchasesVat (VatCategorySa k, Company c, DATE df, DATE dt) =
-    GROUP SUM taxAmount(Tax t, Bill b) IF inPeriodSa(b, c, df, dt) AND domesticBillSa(b) AND isVatSa(t) AND vatCategorySa(t) = k;
+    GROUP SUM vatSa(Tax t, Bill b) IF inPeriodSa(b, c, df, dt) AND domesticBillSa(b) AND isVatSa(t) AND vatCategorySa(t) = k;
 
 // refunds to vendors by category (negative adjustments of purchases)
 refundsNet (VatCategorySa k, Company c, DATE df, DATE dt) =
     GROUP SUM netSa(Tax t, Invoice i) IF inPeriodSa(i, c, df, dt) AND isRefund(i) AND isVatSa(t) AND vatCategorySa(t) = k;
 refundsVat (VatCategorySa k, Company c, DATE df, DATE dt) =
-    GROUP SUM taxAmount(Tax t, Invoice i) IF inPeriodSa(i, c, df, dt) AND isRefund(i) AND isVatSa(t) AND vatCategorySa(t) = k;
+    GROUP SUM vatSa(Tax t, Invoice i) IF inPeriodSa(i, c, df, dt) AND isRefund(i) AND isVatSa(t) AND vatCategorySa(t) = k;
 
 // imports with VAT paid at customs (bills of the customs: the base and the VAT paid)
 importsNet (Company c, DATE df, DATE dt) =
     GROUP SUM netSa(Tax t, Bill b) IF inPeriodSa(b, c, df, dt) AND importVatSa(type(b)) AND NOT isCreditNote(b) AND isVatSa(t);
 importsVat (Company c, DATE df, DATE dt) =
-    GROUP SUM taxAmount(Tax t, Bill b) IF inPeriodSa(b, c, df, dt) AND importVatSa(type(b)) AND NOT isCreditNote(b) AND isVatSa(t);
+    GROUP SUM vatSa(Tax t, Bill b) IF inPeriodSa(b, c, df, dt) AND importVatSa(type(b)) AND NOT isCreditNote(b) AND isVatSa(t);
 
 // imports by reverse charge (foreign services and goods without VAT): the VAT is self-assessed at 15 %
 reverseChargeNet (Company c, DATE df, DATE dt) =
-    GROUP SUM amount(Bill b) IF inPeriodSa(b, c, df, dt) AND reverseChargeSa(type(b)) AND NOT isCreditNote(b);
+    GROUP SUM NUMERIC[14,2](amount(Bill b) * rate1(b)) IF inPeriodSa(b, c, df, dt) AND reverseChargeSa(type(b)) AND NOT isCreditNote(b);
 reverseChargeVat (Company c, DATE df, DATE dt) = NUMERIC[14,2](reverseChargeNet(c, df, dt) * 0.15);
 
 // ---------- boxes of the return ----------
@@ -190,9 +196,9 @@ inPeriodSa (Bill b, Company c, INTERVAL[DATE] p) = inPeriodSa(b, c, from(p), to(
 
 // documents of the period with their VAT, for checking the return
 netSa 'Net (SAR)' (Invoice i) = GROUP SUM netSa(Tax t, i) IF isVatSa(t);
-vatSa 'VAT (SAR)' (Invoice i) = GROUP SUM taxAmount(Tax t, i) IF isVatSa(t);
+vatSa 'VAT (SAR)' (Invoice i) = GROUP SUM vatSa(Tax t, i) IF isVatSa(t);
 netSa 'Net (SAR)' (Bill b) = GROUP SUM netSa(Tax t, b) IF isVatSa(t);
-vatSa 'VAT (SAR)' (Bill b) = GROUP SUM taxAmount(Tax t, b) IF isVatSa(t);
+vatSa 'VAT (SAR)' (Bill b) = GROUP SUM vatSa(Tax t, b) IF isVatSa(t);
 
 // ---------- form ----------
 

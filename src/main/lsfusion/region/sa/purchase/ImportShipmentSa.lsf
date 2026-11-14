@@ -53,9 +53,11 @@ costsPercent 'Costs, %' (ImportShipmentSa s) = NUMERIC[8,2](costsAmount(s) * 100
 
 countBills 'Documents' (ImportShipmentSa s) = GROUP SUM 1 IF importShipmentSa(Bill b) = s;
 
-// landed cost by line: the goods amount with the distributed costs
+// landed cost by line: the goods amount with the costs distributed to the line (in SAR, by the rate of each service)
+importCostsSa 'Import costs (SAR)' (BillLine l) =
+    NUMERIC[14,2](GROUP SUM costAllocated(l, BillLine bsl) * rate1(bsl) IF serviceLine(l, bsl)) IF item(l) IS Product;
 landedUnitCost 'Landed unit cost (SAR)' (BillLine l) =
-    NUMERIC[14,4]((untaxedAmount(l) * rate1(l) (+) costAllocated(l)) / quantity(l)) IF item(l) IS Product;
+    NUMERIC[14,4]((untaxedAmount(l) * rate1(l) (+) importCostsSa(l)) / quantity(l)) IF item(l) IS Product;
 
 // distributes all the service lines of the documents on all the goods lines (by the base of each service line,
 // the goods amount when none is set)
@@ -81,7 +83,7 @@ FORM importShipmentSa 'Import file'
     FILTERS importShipmentSa(b) = s
 
     OBJECTS l = BillLine
-    PROPERTIES(l) READONLY nameItem, quantity, untaxedAmount, costAllocated, landedUnitCost
+    PROPERTIES(l) READONLY nameItem, quantity, untaxedAmount, importCostsSa, landedUnitCost
     FILTERS importShipmentSa(bill(l)) = s, item(l) IS Product
 
     EDIT ImportShipmentSa OBJECT s
