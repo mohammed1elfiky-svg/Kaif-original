@@ -1,0 +1,302 @@
+MODULE Distribution;
+
+REQUIRE Employee, Location, InvLedger, ProductSku, BarCode, TaxItem, PartnerGeo, PartnerSales,
+        SalesPriceType, SalesPricelistValue, SalesPricelistInvoice, PaymentTermsSales,
+        InvoiceShipment, InvoiceDebt, DebtLimit, IncomingPaymentDebt, IncomingPaymentDone, CashAccount,
+        PartnerSa;
+
+NAMESPACE Distribution;
+
+// Van sales (mobile distributors) working offline with the Kaif distributor app (distributor-app/).
+// The app downloads its data with getData, sells from the van stock, collects payments and prints
+// invoices without a network, then uploads the documents with upload when it is online.
+
+// ---------- settings ----------
+
+invoiceType = DATA InvoiceType ();
+nameInvoiceType 'Invoice type for distributors' () = name(invoiceType());
+
+cashPaymentType = DATA IncomingPaymentType ();
+nameCashPaymentType 'Payment type (cash)' () = name(cashPaymentType());
+
+bankPaymentType = DATA IncomingPaymentType ();
+nameBankPaymentType 'Payment type (transfer / card)' () = name(bankPaymentType());
+
+// ---------- distributors ----------
+
+isDistributor 'Distributor' = DATA BOOLEAN (Employee);
+
+vanLocation = DATA Location (Employee);
+nameVanLocation 'Van location' (Employee e) = name(vanLocation(e));
+
+documentPrefix 'Document prefix' = DATA STRING[10] (Employee);
+employeeDocumentPrefix = GROUP AGGR Employee e BY documentPrefix(e);
+
+CONSTRAINT isDistributor(Employee e) AND NOT documentPrefix(e)
+    MESSAGE 'A distributor must have a document prefix (unique invoice numbering on the device)';
+
+// customers of the distributor (route)
+distributor = DATA Employee (Partner);
+nameDistributor 'Distributor' (Partner p) = name(distributor(p));
+countCustomers 'Customers' (Employee e) = GROUP SUM 1 IF distributor(Partner p) = e AND active(p);
+
+// ---------- documents from the app ----------
+
+mobileId 'Mobile ID' = DATA STRING[40] (Invoice) INDEXED;
+invoiceMobile = GROUP AGGR Invoice i BY mobileId(i);
+distributor = DATA Employee (Invoice);
+nameDistributor 'Distributor' (Invoice i) = name(distributor(i));
+
+mobileId 'Mobile ID' = DATA STRING[40] (IncomingPayment) INDEXED;
+incomingPaymentMobile = GROUP AGGR IncomingPayment p BY mobileId(p);
+distributor = DATA Employee (IncomingPayment);
+nameDistributor 'Distributor' (IncomingPayment p) = name(distributor(p));
+
+// ---------- download: GET /exec/Distribution.getData ----------
+
+distributionPriceType (Partner p) = OVERRIDE priceType(p), priceType(invoiceType());
+usedPriceType (Employee e, PriceType t) = GROUP SUM 1 IF distributor(Partner p) = e AND active(p) AND distributionPriceType(p) = t;
+
+vanOnHand (Employee e, Product p) = onHand(vanLocation(e), p);
+
+getData () {
+    FOR Employee e = currentUser() AND isDistributor(e) DO {
+        EXPORT JSON FROM
+            distributor = (JSON FROM
+                id = id(Employee x),
+                name = name(x),
+                prefix = documentPrefix(x),
+                location = name(vanLocation(x))
+                WHERE x = e),
+            company = (JSON FROM
+                name = fullName(Company c),
+                vat = vatNumberSa(c),
+                cr = crNumberSa(c),
+                address = nationalAddressSa(c),
+                phone = phone(c)
+                WHERE c = defaultCompany()),
+            customers = (JSON FROM
+                id = id(Partner p),
+                name = name(p),
+                vat = vatNumberSa(p),
+                address = addressCsv(p),
+                phone = phone(p),
+                latitude = latitude(p),
+                longitude = longitude(p),
+                priceType = id(distributionPriceType(p)),
+                paymentDays = days(customerPaymentTerms(p)),
+                creditLimit = creditLimit(p),
+                maxOverdueDays = maxOverdueDays(p),
+                debt = debt(p),
+                overdueDays = maxOverdueDebtDays(p)
+                WHERE distributor(p) = e AND active(p)),
+            openInvoices = (JSON FROM
+                customer = id(partner(OutgoingDebt d)),
+                number = number(d),
+                date = dateTime(d),
+                due = dueDateTime(d),
+                amount = amount(d),
+                left = left(d)
+                WHERE active(d) AND left(d) > 0 AND distributor(partner(d)) = e),
+            items = (JSON FROM
+                id = id(Product i),
+                name = name(i),
+                barcode = idBarCode(i),
+                uom = nameUom(i),
+                tax = salesTax(i),
+                onHand = vanOnHand(e, i)
+                WHERE id(i) AND active(i) AND vanOnHand(e, i) > 0),
+            prices = (JSON FROM
+                priceType = id(PriceType t),
+                taxIncluded = taxIncluded(t),
+                item = id(Product i),
+                price = overPriceA(t, i, currentDateTime())
+                WHERE usedPriceType(e, t) AND vanOnHand(e, i) > 0 AND overPriceA(t, i, currentDateTime()));
+    } ELSE
+        throwException('The current user is not a distributor');
+} @@api;
+
+// ---------- upload: POST /exec/Distribution.upload ----------
+
+// invoices
+invId = DATA LOCAL STRING[40] (INTEGER);
+invNumber = DATA LOCAL STRING[50] (INTEGER);
+invDate = DATA LOCAL DATETIME (INTEGER);
+invCustomer = DATA LOCAL STRING[50] (INTEGER);
+invTaxIncluded = DATA LOCAL BOOLEAN (INTEGER);
+invPaid = DATA LOCAL NUMERIC[14,2] (INTEGER);
+invMethod = DATA LOCAL STRING[10] (INTEGER);
+invNote = DATA LOCAL STRING (INTEGER);
+
+lineInvoice = DATA LOCAL INTEGER (LONG);
+lineItem = DATA LOCAL STRING[50] (LONG);
+lineQuantity = DATA LOCAL NUMERIC[16,3] (LONG);
+linePrice = DATA LOCAL NUMERIC[10,2] (LONG);
+
+// collections
+payId = DATA LOCAL STRING[40] (INTEGER);
+payNumber = DATA LOCAL STRING[50] (INTEGER);
+payDate = DATA LOCAL DATETIME (INTEGER);
+payCustomer = DATA LOCAL STRING[50] (INTEGER);
+payAmount = DATA LOCAL NUMERIC[14,2] (INTEGER);
+payMethod = DATA LOCAL STRING[10] (INTEGER);
+payInvoice = DATA LOCAL STRING[50] (INTEGER);
+payNote = DATA LOCAL STRING (INTEGER);
+
+FORM importDistribution
+    OBJECTS invoices = INTEGER
+    PROPERTIES(invoices) invId EXTID 'id', invNumber EXTID 'number', invDate EXTID 'date',
+                         invCustomer EXTID 'customer', invTaxIncluded EXTID 'taxIncluded',
+                         invPaid EXTID 'paid', invMethod EXTID 'method', invNote EXTID 'note'
+
+    OBJECTS lines = LONG
+    PROPERTIES(lines) lineItem EXTID 'item', lineQuantity EXTID 'quantity', linePrice EXTID 'price'
+    FILTERS lineInvoice(lines) = invoices
+
+    OBJECTS payments = INTEGER
+    PROPERTIES(payments) payId EXTID 'id', payNumber EXTID 'number', payDate EXTID 'date',
+                         payCustomer EXTID 'customer', payAmount EXTID 'amount', payMethod EXTID 'method',
+                         payInvoice EXTID 'invoice', payNote EXTID 'note'
+;
+
+paymentType (STRING method) = IF method = 'bank' THEN bankPaymentType() ELSE cashPaymentType();
+
+// incoming payment of the distributor, matched to the given invoice or to the oldest open debts of the customer
+newPayment (Employee e, STRING id, STRING number, DATETIME date, Partner c, NUMERIC[14,2] amount, STRING method,
+            Invoice inv, STRING note) {
+    NEW p = IncomingPayment {
+        mobileId(p) <- id;
+        distributor(p) <- e;
+        type(p) <- paymentType(method);
+        dateTime(p) <- date;
+        partner(p) <- c;
+        amount(p) <- amount;
+        reference(p) <- number;
+        note(p) <- note;
+        IF cash(type(p)) AND cashAccount(e) THEN
+            companyAccount(p) <- cashAccount(e);
+        done(p) <- TRUE;
+
+        LOCAL rest = NUMERIC[14,2] ();
+        rest() <- amount;
+        IF inv THEN {
+            paid(p, inv) <- min(rest(), left(inv));
+            rest() <- rest() (-) paid(p, inv);
+        }
+        FOR active(OutgoingDebt d) AND partner(d) = c AND left(d) > 0 AND NOT d = inv AND rest() > 0
+            ORDER dateTime(d), d DO {
+            paid(p, d) <- min(rest(), left(d));
+            rest() <- rest() (-) paid(p, d);
+        }
+    }
+}
+
+uploadResult = DATA LOCAL STRING (STRING[40]);
+
+upload (JSON json) {
+    FOR Employee e = currentUser() AND isDistributor(e) DO {
+        IMPORT importDistribution JSON FROM json;
+
+        // invoices, one session per document: an error in one document does not block the others
+        FOR invId(INTEGER r) ORDER invDate(r), r DO {
+            IF invoiceMobile(invId(r)) THEN
+                uploadResult(invId(r)) <- 'ok';
+            ELSE NEWSESSION NESTED LOCAL {
+                NEW i = Invoice {
+                    mobileId(i) <- invId(r);
+                    distributor(i) <- e;
+                    type(i) <- invoiceType();
+                    number(i) <- invNumber(r);
+                    dateTime(i) <- invDate(r);
+                    customer(i) <- partner(invCustomer(r));
+                    location(i) <- vanLocation(e);
+                    taxIncluded(i) <- invTaxIncluded(r);
+                    note(i) <- invNote(r);
+                    // the credit limit was checked on the device when the sale was made
+                    skipCreditControl(i) <- TRUE;
+
+                    FOR lineInvoice(LONG l) = r ORDER l INLINE NEW il = InvoiceLine DO {
+                        invoice(il) <- i;
+                        item(il) <- item(lineItem(l));
+                        quantity(il) <- lineQuantity(l);
+                        price(il) <- linePrice(l);
+                    }
+                    ready(i) <- TRUE;
+
+                    IF invPaid(r) > 0 THEN
+                        newPayment(e, invId(r) + '-p', invNumber(r), invDate(r), customer(i), invPaid(r), invMethod(r), i, NULL);
+                }
+                APPLY;
+                uploadResult(invId(r)) <- IF canceled() THEN applyMessage() ELSE 'ok';
+            }
+        }
+
+        // collections
+        FOR payId(INTEGER r) ORDER payDate(r), r DO {
+            IF incomingPaymentMobile(payId(r)) THEN
+                uploadResult(payId(r)) <- 'ok';
+            ELSE NEWSESSION NESTED LOCAL {
+                newPayment(e, payId(r), payNumber(r), payDate(r), partner(payCustomer(r)), payAmount(r), payMethod(r),
+                           OVERRIDE invoiceMobile(payInvoice(r)), (GROUP MAX Invoice i IF number(i) = payInvoice(r) AND customer(i) = partner(payCustomer(r))),
+                           payNote(r));
+                APPLY;
+                uploadResult(payId(r)) <- IF canceled() THEN applyMessage() ELSE 'ok';
+            }
+        }
+
+        EXPORT JSON FROM id = STRING[40] s, result = uploadResult(s) WHERE uploadResult(s);
+    } ELSE
+        throwException('The current user is not a distributor');
+} @@api;
+
+// ---------- forms ----------
+
+EXTEND FORM MasterData.employee
+    PROPERTIES(e) isDistributor, nameVanLocation SHOWIF isDistributor(e), documentPrefix SHOWIF isDistributor(e),
+                  countCustomers SHOWIF isDistributor(e)
+;
+
+DESIGN MasterData.employee {
+    details {
+        NEW distribution {
+            caption = 'Distribution';
+            MOVE PROPERTY(isDistributor(e));
+            MOVE PROPERTY(nameVanLocation(e));
+            MOVE PROPERTY(documentPrefix(e));
+            MOVE PROPERTY(countCustomers(e));
+        }
+    }
+}
+
+EXTEND FORM MasterData.partner
+    PROPERTIES(p) nameDistributor
+;
+
+DESIGN MasterData.partner {
+    customerOptions {
+        MOVE PROPERTY(nameDistributor(p));
+    }
+}
+
+EXTEND FORM MasterData.partners
+    PROPERTIES(p) READONLY nameDistributor
+;
+
+EXTEND FORM Invoicing.invoices
+    PROPERTIES(i) READONLY nameDistributor
+;
+
+EXTEND FORM Invoicing.options
+    PROPERTIES() nameInvoiceType, nameCashPaymentType, nameBankPaymentType
+;
+
+DESIGN Invoicing.options {
+    commons {
+        NEW distribution {
+            caption = 'Distribution';
+            MOVE PROPERTY(nameInvoiceType());
+            MOVE PROPERTY(nameCashPaymentType());
+            MOVE PROPERTY(nameBankPaymentType());
+        }
+    }
+}
