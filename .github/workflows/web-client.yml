@@ -1,6 +1,6 @@
 # Web client in Arabic: compiles the lsFusion web client (GWT) with the Arabic texts of
 # deploy/client/ClientMessages.properties in place of the English ones and publishes the image
-# ghcr.io/<owner>/kaif-client (used by deploy/compose.yaml instead of lsfusion/client).
+# ghcr.io/<owner>/kaif:client (used by deploy/compose.yaml instead of lsfusion/client).
 # Runs weekly too, so the client follows the 7.0-SNAPSHOT server.
 name: Web client
 
@@ -55,6 +55,12 @@ jobs:
           cp web-client/target/lsfusion-client-*.war "$GITHUB_WORKSPACE/deploy/client/ROOT.war"
           ls -la "$GITHUB_WORKSPACE/deploy/client"
 
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kaif-web-client
+          path: deploy/client/ROOT.war
+          retention-days: 7
+
       - uses: docker/login-action@v3
         if: github.event_name != 'pull_request'
         with:
@@ -64,7 +70,8 @@ jobs:
 
       - name: Build and push
         run: |
-          image="ghcr.io/$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')/kaif-client"
-          docker build -t "$image:latest" -t "$image:${GITHUB_SHA::7}" deploy/client
-          docker push "$image:latest"
-          docker push "$image:${GITHUB_SHA::7}"
+          # same package as the logics image (the token of the workflow can push to it), tag "client"
+          image="ghcr.io/$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')/kaif"
+          docker build -t "$image:client" -t "$image:client-${GITHUB_SHA::7}" deploy/client
+          docker push "$image:client"
+          docker push "$image:client-${GITHUB_SHA::7}"

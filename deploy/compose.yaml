@@ -37,7 +37,8 @@ services:
       - JAVA_OPTS=${JAVA_OPTS:--Xmx2g}
 
   client:
-    image: lsfusion/client:7.0-SNAPSHOT
+    # web client in Arabic (built by .github/workflows/web-client.yml); lsfusion/client:7.0-SNAPSHOT is the original
+    image: ${KAIF_CLIENT_IMAGE:-ghcr.io/mohammed1elfiky-svg/kaif:client}
     restart: unless-stopped
     depends_on:
       - server

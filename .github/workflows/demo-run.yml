@@ -66,7 +66,7 @@ jobs:
       - name: Start the web client
         run: |
           owner=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')
-          image=ghcr.io/$owner/kaif-client:latest
+          image=ghcr.io/$owner/kaif:client
           docker pull $image || image=lsfusion/client:7.0-SNAPSHOT
           echo "Client image: $image"
           docker run -d --name client --network host -e APP_SERVER=localhost $image
