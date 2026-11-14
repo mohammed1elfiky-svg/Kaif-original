@@ -58,8 +58,8 @@ demoLocation (STRING name) {
 
 demoDistributor (STRING first, STRING last, STRING prefix, Location van) {
     NEW e = Employee {
-        firstName(e) <- ISTRING[30](first);
-        lastName(e) <- ISTRING[30](last);
+        MasterData.firstName(e) <- ISTRING[30](first);
+        MasterData.lastName(e) <- ISTRING[30](last);
         isDistributor(e) <- TRUE;
         vanLocation(e) <- van;
         documentPrefix(e) <- STRING[10](prefix);
