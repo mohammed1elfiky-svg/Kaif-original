@@ -11,13 +11,16 @@ lastInvoice () = GROUP MAX Invoice i;
 lastReturn () = GROUP MAX Bill b IF Invoicing.isCreditNote(b);
 demoCustomer () = GROUP MAX LegalEntity c IF name(c) = 'أسواق النخبة';
 demoWarehouse () = GROUP MAX Location l IF name(l) = 'المستودع الرئيسي';
+// a desk sales type with a number series (the distributor type takes the numbers from the app)
+deskInvoiceType () = GROUP MAX InvoiceType t IF numerator(t) AND billType(t) AND NOT t = Distribution.invoiceType();
+
 firstProducts (Product p) = PARTITION SUM 1 IF p IS Product ORDER p;
 
 runScenario () {
     Kaif.loadDemoDataDo();
     NEWSESSION {
         NEW i = Invoice {
-            type(i) <- Distribution.invoiceType();
+            type(i) <- deskInvoiceType();
             dateTime(i) <- currentDateTime();
             customer(i) <- demoCustomer();
             location(i) <- demoWarehouse();
@@ -33,7 +36,7 @@ runScenario () {
     }
     NEWSESSION {
         NEW b = Bill {
-            type(b) <- Distribution.returnBillType();
+            type(b) <- billType(type(lastInvoice()));
             dateTime(b) <- currentDateTime();
             vendor(b) <- demoCustomer();
             location(b) <- demoWarehouse();
