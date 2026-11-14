@@ -411,6 +411,15 @@ invoiceByNumber (STRING number, Partner c) = OVERRIDE invoiceMobile(number),
 uploadResultCount = DATA LOCAL NESTED INTEGER ();
 uploadResultId = DATA LOCAL NESTED STRING[40] (INTEGER);
 uploadResultText = DATA LOCAL NESTED STRING (INTEGER);
+// the reason why a document was not saved, kept by its mobile id for the answer (and the next uploads)
+uploadError 'Upload error' = DATA TEXT (STRING[40]);
+saveUploadError (STRING[40] id, TEXT message) {
+    NEWSESSION {
+        uploadError(id) <- message;
+        APPLY;
+    }
+}
+
 uploadResult (STRING[40] id, STRING text) {
     uploadResultCount() <- (OVERRIDE uploadResultCount(), 0) + 1;
     uploadResultId(uploadResultCount()) <- id;
@@ -430,9 +439,7 @@ upload (JSON json) {
 
         // invoices
         FOR invId(INTEGER r) ORDER invDate(r), r DO {
-            IF invoiceMobile(invId(r)) THEN
-                uploadResult(invId(r), 'ok');
-            ELSE NEWSESSION NESTED LOCAL {
+            IF NOT invoiceMobile(invId(r)) THEN NEWSESSION NESTED LOCAL {
                 NEW i = Invoice {
                     mobileId(i) <- invId(r);
                     distributor(i) <- e;
@@ -456,15 +463,15 @@ upload (JSON json) {
                         newPayment(e, invId(r) + '-p', invNumber(r), invDate(r), customer(i), invPaid(r), invMethod(r), i, NULL);
                 }
                 APPLY;
-                uploadResult(invId(r), IF canceled() THEN applyMessage() ELSE 'ok');
+                IF canceled() THEN saveUploadError(invId(r), applyMessage());
             }
+            // the answer from the database: the changes of the document session do not come back to this one
+            uploadResult(invId(r), IF invoiceMobile(invId(r)) THEN 'ok' ELSE (OVERRIDE uploadError(invId(r)), 'error'));
         }
 
         // returns (credit notes)
         FOR retId(INTEGER r) ORDER retDate(r), r DO {
-            IF billMobile(retId(r)) THEN
-                uploadResult(retId(r), 'ok');
-            ELSE NEWSESSION NESTED LOCAL {
+            IF NOT billMobile(retId(r)) THEN NEWSESSION NESTED LOCAL {
                 NEW b = Bill {
                     mobileId(b) <- retId(r);
                     distributor(b) <- e;
@@ -500,27 +507,27 @@ upload (JSON json) {
                     matchDebts(b, vendor(b), amount[Bill](b) (-) retRefund(r), invoiceByNumber(retInvoice(r), vendor(b)));
                 }
                 APPLY;
-                uploadResult(retId(r), IF canceled() THEN applyMessage() ELSE 'ok');
+                IF canceled() THEN saveUploadError(retId(r), applyMessage());
             }
+            // the answer from the database: the changes of the document session do not come back to this one
+            uploadResult(retId(r), IF billMobile(retId(r)) THEN 'ok' ELSE (OVERRIDE uploadError(retId(r)), 'error'));
         }
 
         // collections
         FOR payId(INTEGER r) ORDER payDate(r), r DO {
-            IF incomingPaymentMobile(payId(r)) THEN
-                uploadResult(payId(r), 'ok');
-            ELSE NEWSESSION NESTED LOCAL {
+            IF NOT incomingPaymentMobile(payId(r)) THEN NEWSESSION NESTED LOCAL {
                 newPayment(e, payId(r), payNumber(r), payDate(r), partner(payCustomer(r)), payAmount(r), payMethod(r),
                            invoiceByNumber(payInvoice(r), partner(payCustomer(r))), payNote(r));
                 APPLY;
-                uploadResult(payId(r), IF canceled() THEN applyMessage() ELSE 'ok');
+                IF canceled() THEN saveUploadError(payId(r), applyMessage());
             }
+            // the answer from the database: the changes of the document session do not come back to this one
+            uploadResult(payId(r), IF incomingPaymentMobile(payId(r)) THEN 'ok' ELSE (OVERRIDE uploadError(payId(r)), 'error'));
         }
 
         // visits
         FOR visId(INTEGER r) ORDER visDate(r), r DO {
-            IF visitMobile(visId(r)) THEN
-                uploadResult(visId(r), 'ok');
-            ELSE NEWSESSION NESTED LOCAL {
+            IF NOT visitMobile(visId(r)) THEN NEWSESSION NESTED LOCAL {
                 NEW v = Visit {
                     mobileId(v) <- visId(r);
                     distributor(v) <- e;
@@ -537,15 +544,15 @@ upload (JSON json) {
                     }
                 }
                 APPLY;
-                uploadResult(visId(r), IF canceled() THEN applyMessage() ELSE 'ok');
+                IF canceled() THEN saveUploadError(visId(r), applyMessage());
             }
+            // the answer from the database: the changes of the document session do not come back to this one
+            uploadResult(visId(r), IF visitMobile(visId(r)) THEN 'ok' ELSE (OVERRIDE uploadError(visId(r)), 'error'));
         }
 
         // closings of the day
         FOR cloId(INTEGER r) ORDER cloDate(r), r DO {
-            IF closingMobile(cloId(r)) THEN
-                uploadResult(cloId(r), 'ok');
-            ELSE NEWSESSION NESTED LOCAL {
+            IF NOT closingMobile(cloId(r)) THEN NEWSESSION NESTED LOCAL {
                 NEW c = Closing {
                     mobileId(c) <- cloId(r);
                     distributor(c) <- e;
@@ -566,8 +573,10 @@ upload (JSON json) {
                     }
                 }
                 APPLY;
-                uploadResult(cloId(r), IF canceled() THEN applyMessage() ELSE 'ok');
+                IF canceled() THEN saveUploadError(cloId(r), applyMessage());
             }
+            // the answer from the database: the changes of the document session do not come back to this one
+            uploadResult(cloId(r), IF closingMobile(cloId(r)) THEN 'ok' ELSE (OVERRIDE uploadError(cloId(r)), 'error'));
         }
 
         EXPORT JSON FROM id = uploadResultId(INTEGER i), result = uploadResultText(i) WHERE uploadResultId(i) ORDER i;
