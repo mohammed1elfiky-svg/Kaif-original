@@ -4,7 +4,7 @@ REQUIRE Employee, Location, InvLedger, ProductSku, BarCode, TaxItem, PartnerGeo,
         SalesPriceType, SalesPricelistValue, SalesPricelistInvoice, PaymentTermsSales,
         InvoiceShipment, InvoiceDebt, DebtLimit, IncomingPaymentDebt, IncomingPaymentDone, CashAccount,
         CreditNote, CreditNoteReceipt, BillDebt, OutgoingPaymentDebt, OutgoingPaymentDone,
-        PartnerSa;
+        PartnerSa, TrialSa;
 
 NAMESPACE Distribution;
 
@@ -137,6 +137,8 @@ vanOnHand (Employee e, Product p) = onHand(vanLocation(e), p);
 distributorPrice (Employee e, Product i) = GROUP MAX overPriceA(PriceType t, i, currentDateTime()) IF usedPriceType(e, t);
 
 getData () {
+    IF Kaif.trialExpired() THEN
+        throwException('The trial period has ended. Enter the activation key in Administration -> Activation');
     FOR Employee e = currentUser() AND isDistributor(e) DO {
         EXPORT JSON FROM
             distributor = (JSON FROM
@@ -369,6 +371,8 @@ invoiceByNumber (STRING number, Partner c) = OVERRIDE invoiceMobile(number),
 uploadResult = DATA LOCAL STRING (STRING[40]);
 
 upload (JSON json) {
+    IF Kaif.trialExpired() THEN
+        throwException('The trial period has ended. Enter the activation key in Administration -> Activation');
     FOR Employee e = currentUser() AND isDistributor(e) DO {
         IMPORT importDistribution JSON FROM json;
 
@@ -551,8 +555,8 @@ FORM closings 'Closings of the day'
 ;
 
 NAVIGATOR {
-    invoicing {
-        operations {
+    Invoicing.invoicing {
+        Invoicing.operations {
             NEW closings;
             NEW visits;
         }

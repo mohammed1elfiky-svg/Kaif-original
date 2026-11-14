@@ -41,8 +41,8 @@ FORM expiringLots 'Expiring lots'
 ;
 
 NAVIGATOR {
-    stock {
-        reporting {
+    Inventory.stock {
+        Inventory.reporting {
             NEW expiringLots;
         }
     }

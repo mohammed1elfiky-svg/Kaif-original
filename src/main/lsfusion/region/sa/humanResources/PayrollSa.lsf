@@ -246,8 +246,8 @@ FORM eosProvisionSa 'End of service provision'
 ;
 
 NAVIGATOR {
-    humanResources {
-        operations {
+    HumanResources.humanResources {
+        HumanResources.operations {
             NEW leavesSa;
             NEW eosProvisionSa;
         }

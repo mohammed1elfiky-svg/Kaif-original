@@ -142,8 +142,8 @@ DESIGN bill {
 }
 
 NAVIGATOR {
-    purchase {
-        operations {
+    Purchase.purchase {
+        Purchase.operations {
             NEW importShipmentsSa;
         }
     }

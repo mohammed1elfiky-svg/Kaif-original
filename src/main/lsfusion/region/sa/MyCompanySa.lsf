@@ -10,5 +10,5 @@ REQUIRE MyCompany,
         ZatcaQR,
         InvoicePrintSa, InvoicePrintInitialSa, VatReturnSa, PosReceiptSa,
         EmployeeSa, PayrollSa, RolesSa,
-        ImportShipmentSa, LotExpirySa, EcommerceSa,
+        ImportShipmentSa, LotExpirySa, EcommerceSa, TrialSa,
         Distribution;

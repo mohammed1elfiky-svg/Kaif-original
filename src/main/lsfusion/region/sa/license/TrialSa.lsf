@@ -1,0 +1,115 @@
+MODULE TrialSa;
+
+REQUIRE SystemEvents, Time, Utils, Invoice, Bill, IncomingPayment, OutgoingPayment, Shipment, Receipt;
+
+NAMESPACE Kaif;
+
+// Trial version and activation of Al-Kaif Al-Asli.
+//  - The trial starts on the first start of the server and lasts 14 days; the users see the days left.
+//  - After the trial, without an activation key, the data stays readable but new invoices, bills, payments,
+//    shipments and receipts cannot be created, and the distributor app is refused.
+//  - Activation key: signed by the vendor with a private RSA key (tools/license/make_license.py), checked
+//    with the public key in mycompany.license.LicenseVerifier. The key is checked again on each start, so
+//    the activation cannot be faked by editing the database.
+//  - The date used is the latest date seen by the server, so turning the clock back does not extend the trial.
+
+trialDays 'Trial days' () = 14;
+
+installDate 'Installation date' = DATA DATE ();
+lastSeenDate = DATA DATE ();
+
+licenseKey = DATA TEXT ();
+licensee 'Licensed to' = DATA ISTRING[200] ();
+licenseExpires 'License valid until' = DATA STRING[20] ();
+
+licenseCheckValid = DATA LOCAL BOOLEAN ();
+licenseCheckLicensee = DATA LOCAL TEXT ();
+licenseCheckExpires = DATA LOCAL TEXT ();
+verifyLicense INTERNAL 'mycompany.license.VerifyLicenseAction' (TEXT);
+
+isoToDate (STRING s) = FORMULA DATE '(CASE WHEN ($1) ~ \'^[0-9]{4}-[0-9]{2}-[0-9]{2}$\' THEN ($1)::date END)';
+
+licenseDate () = max(currentDate(), (OVERRIDE lastSeenDate(), currentDate()));
+
+licenseActive 'Activated' () = licensee() AND (licenseExpires() = 'never' OR isoToDate(licenseExpires()) >= licenseDate());
+trialDaysLeft 'Trial days left' () = trialDays() - daysBetweenDates(licenseDate(), installDate()) IF installDate() AND NOT licenseActive();
+trialExpired 'Trial expired' () = installDate() AND NOT licenseActive() AND NOT trialDaysLeft() > 0;
+
+onStarted () + {
+    NEWSESSION {
+        IF NOT installDate() THEN installDate() <- currentDate();
+        IF NOT lastSeenDate() OR currentDate() > lastSeenDate() THEN lastSeenDate() <- currentDate();
+        // the activation is valid only with a correctly signed key
+        verifyLicense(licenseKey());
+        licensee() <- ISTRING[200](licenseCheckLicensee()) IF licenseCheckValid();
+        licenseExpires() <- STRING[20](licenseCheckExpires()) IF licenseCheckValid();
+        APPLY;
+    }
+}
+
+activate 'Activate' () {
+    INPUT k = TEXT DO {
+        verifyLicense(k);
+        IF licenseCheckValid() THEN {
+            licenseKey() <- k;
+            licensee() <- ISTRING[200](licenseCheckLicensee());
+            licenseExpires() <- STRING[20](licenseCheckExpires());
+            APPLY;
+            MESSAGE 'The program is activated';
+        } ELSE
+            MESSAGE 'The activation key is not valid';
+    }
+}
+
+// ---------- after the trial: no new documents ----------
+
+CONSTRAINT SET(Invoice i IS Invoice) AND trialExpired()
+    MESSAGE 'The trial period has ended. Enter the activation key in Administration -> Activation';
+CONSTRAINT SET(Bill b IS Bill) AND trialExpired()
+    MESSAGE 'The trial period has ended. Enter the activation key in Administration -> Activation';
+CONSTRAINT SET(IncomingPayment p IS IncomingPayment) AND trialExpired()
+    MESSAGE 'The trial period has ended. Enter the activation key in Administration -> Activation';
+CONSTRAINT SET(OutgoingPayment p IS OutgoingPayment) AND trialExpired()
+    MESSAGE 'The trial period has ended. Enter the activation key in Administration -> Activation';
+CONSTRAINT SET(Shipment s IS Shipment) AND trialExpired()
+    MESSAGE 'The trial period has ended. Enter the activation key in Administration -> Activation';
+CONSTRAINT SET(Receipt r IS Receipt) AND trialExpired()
+    MESSAGE 'The trial period has ended. Enter the activation key in Administration -> Activation';
+
+// ---------- notices ----------
+
+onWebClientStarted () + {
+    IF trialExpired() THEN
+        MESSAGE 'The trial period has ended. Enter the activation key in Administration -> Activation' NOWAIT;
+    ELSE IF trialDaysLeft() THEN
+        MESSAGE 'Trial version. Days left: ' + trialDaysLeft() NOWAIT;
+}
+
+FORM licenseSa 'Activation'
+    PROPERTIES() READONLY installDate, trialDays, trialDaysLeft, licenseActive, licensee, licenseExpires
+    PROPERTIES() activate
+;
+
+DESIGN licenseSa {
+    OBJECTS {
+        NEW trial {
+            caption = 'Trial version';
+            MOVE PROPERTY(installDate());
+            MOVE PROPERTY(trialDays());
+            MOVE PROPERTY(trialDaysLeft());
+        }
+        NEW license {
+            caption = 'Activation';
+            MOVE PROPERTY(licenseActive());
+            MOVE PROPERTY(licensee());
+            MOVE PROPERTY(licenseExpires());
+            MOVE PROPERTY(activate()) { valueClass = 'btn-primary'; }
+        }
+    }
+}
+
+NAVIGATOR {
+    System.administration {
+        NEW licenseSa;
+    }
+}

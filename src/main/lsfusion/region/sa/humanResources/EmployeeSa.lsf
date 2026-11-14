@@ -135,8 +135,8 @@ FORM expiringDocumentsSa 'Expiring documents'
 ;
 
 NAVIGATOR {
-    humanResources {
-        operations {
+    HumanResources.humanResources {
+        HumanResources.operations {
             NEW expiringDocumentsSa;
         }
     }

@@ -249,8 +249,8 @@ DESIGN vatReturnSa {
 }
 
 NAVIGATOR {
-    invoicing {
-        reporting {
+    Invoicing.invoicing {
+        Invoicing.reporting {
             NEW vatReturnSa;
         }
     }
