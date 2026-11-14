@@ -68,10 +68,61 @@ jobs:
           path: deploy/kaif.jar
           retention-days: 7
 
+  # Starts the real server on an empty PostgreSQL database: creates the tables, runs the SQL functions,
+  # the default data (types, roles, trial) and the start events, and fails on any error.
+  start:
+    needs: check
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: ci-password
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: Build
+        run: |
+          mvn -B -ntp package -DskipTests
+          mvn -B -ntp dependency:build-classpath -Dmdep.outputFile=cp.txt -Dmdep.includeScope=test
+
+      - name: Start the server on an empty database
+        run: |
+          jar=$(ls target/*.jar | grep -v -- '-sources' | head -1)
+          java -Ddb.server=localhost -Ddb.user=postgres -Ddb.password=ci-password -Ddb.name=kaif \
+               -Dlogics.topModule=MyCompanySa -Duser.setLanguage=ar -Duser.setCountry=SA \
+               -cp "$jar:$(cat cp.txt)" lsfusion.server.logics.BusinessLogicsBootstrap > start.log 2>&1 &
+          pid=$!
+          for i in $(seq 1 120); do
+            if grep -q "Server has successfully started" start.log; then break; fi
+            if grep -q "Error starting server" start.log || ! kill -0 $pid 2>/dev/null; then break; fi
+            sleep 5
+          done
+          kill $pid 2>/dev/null || true
+          grep -E "ERROR|Exception|successfully started" start.log | head -100
+          grep -q "Server has successfully started" start.log
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: server-start-log
+          path: start.log
+          retention-days: 14
+
   # Docker image with the logics, published to GitHub Packages when the check passes:
   # ghcr.io/<owner>/kaif:latest and :<commit> (used by deploy/compose.yaml)
   image:
-    needs: check
+    needs: [check, start]
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     permissions:
