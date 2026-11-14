@@ -8,7 +8,7 @@ REQUIRE MyCompany, DefaultData, SystemEvents,
         PartnerSa,
         TaxInitialSa,
         ZatcaQR,
-        InvoicePrintSa, InvoicePrintInitialSa, VatReturnSa, PosReceiptSa,
+        InvoicePrintSa, InvoicePrintInitialSa, CreditNotePrintSa, CreditNotePrintInitialSa, VatReturnSa, PosReceiptSa,
         EmployeeSa, PayrollSa, RolesSa,
         ImportShipmentSa, LotExpirySa, EcommerceSa, TrialSa,
         Distribution, DistributionInitial;

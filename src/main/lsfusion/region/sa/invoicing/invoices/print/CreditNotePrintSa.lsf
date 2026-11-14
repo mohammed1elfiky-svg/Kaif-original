@@ -1,0 +1,24 @@
+MODULE CreditNotePrintSa;
+
+REQUIRE CreditNotePrint, ZatcaQR, UtilsSa;
+
+NAMESPACE Invoicing;
+
+// Saudi credit note (sales return): the same bilingual layout as the tax invoice, the buyer is the
+// partner of the return (vendor of the bill), with the original invoice numbers and the ZATCA QR code
+sellerVatNumberSa 'Seller VAT number' (Bill b) = vatNumberSa(company(b));
+buyerVatNumberSa 'Buyer VAT number' (Bill b) = vatNumberSa(vendor(b));
+crNumberCompanySa (Bill b) = crNumberSa(company(b));
+crNumberVendorSa (Bill b) = crNumberSa(vendor(b));
+nationalAddressCompanySa (Bill b) = nationalAddressSa(company(b));
+nationalAddressVendorSa (Bill b) = nationalAddressSa(vendor(b));
+isSimplifiedSa 'Simplified' (Bill b) = b IS Bill AND NOT buyerVatNumberSa(b);
+zatcaQR 'ZATCA QR' (Bill b) = zatcaTLV(fullName(company(b)), sellerVatNumberSa(b), dateTime(b), amount(b), (OVERRIDE taxAmount(b), 0.0))
+    IF sellerVatNumberSa(b);
+amountWordsSa 'Amount in words' (Bill b) = tafqitSar(amount(b));
+
+EXTEND FORM printBill
+    PROPERTIES(o) sellerVatNumberSa, buyerVatNumberSa, crNumberCompanySa, crNumberVendorSa,
+                  nationalAddressCompanySa, nationalAddressVendorSa,
+                  isSimplifiedSa, zatcaQR, amountWordsSa
+;

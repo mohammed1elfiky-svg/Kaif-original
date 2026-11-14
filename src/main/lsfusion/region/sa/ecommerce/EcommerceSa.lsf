@@ -1,7 +1,7 @@
 MODULE EcommerceSa;
 
 REQUIRE Invoice, InvoiceShipment, InvoiceDebt, IncomingPaymentDebt, IncomingPaymentDone, LegalEntity, Company,
-        BarCode, Distribution, Utils, Time;
+        BarCode, ResLedger, Distribution, Utils, Time;
 
 NAMESPACE Ecommerce;
 
@@ -293,6 +293,75 @@ importAllOrders 'Import the orders of all online stores' () {
     FOR active(EcommerceStore s) DO importOrders(s);
 }
 
+// ---------- stock sync: available quantity of the warehouse of the store -> store ----------
+//  Salla: POST /products/quantities/bulkSkus {"skus": [{"sku", "quantity"}]}
+//  Zid:   PATCH /v1/products/ [{"sku", "quantity"}] (max 50 per request, header Access-Token)
+
+CLASS EcommerceSkuSource 'SKU in the store' {
+    id 'Item ID',
+    barcode 'Barcode',
+    reference 'Reference'
+}
+
+skuSource = DATA EcommerceSkuSource (EcommerceStore);
+nameSkuSource 'SKU in the store' (EcommerceStore s) = staticCaption(skuSource(s));
+
+skuSa (EcommerceStore s, Item i) = CASE
+    WHEN skuSource(s) = EcommerceSkuSource.barcode THEN idBarCode(i)
+    WHEN skuSource(s) = EcommerceSkuSource.reference THEN STRING[50](reference(i))
+    ELSE id(i);
+
+onlineItem 'Sold online' = DATA BOOLEAN (Item);
+EXTEND FORM MasterData.item PROPERTIES(i) onlineItem;
+
+syncStock 'Send the stock to the store' = DATA BOOLEAN (EcommerceStore);
+
+onlineQuantity 'Online quantity' (EcommerceStore s, Product p) = max(INTEGER(floor(OVERRIDE availableRec(location(s), p), 0.0)), 0);
+toSync (EcommerceStore s, Product p) = onlineItem(p) AND skuSa(s, p) AND location(s) AND active(p);
+syncIndex (EcommerceStore s, Product p) = PARTITION SUM 1 IF toSync(s, p) ORDER p BY s;
+countSync 'Items sold online' (EcommerceStore s) = GROUP SUM 1 IF toSync(s, Product p);
+
+lastStockSync 'Last stock sync' = DATA DATETIME (EcommerceStore);
+lastStockMessage 'Result of the last stock sync' = DATA TEXT (EcommerceStore);
+
+inBatch (EcommerceStore s, Product p, INTEGER b) = syncIndex(s, p) > b * 50 AND syncIndex(s, p) <= (b + 1) * 50;
+
+sendStock 'Send stock' (EcommerceStore s) {
+    errors() <- NULL;
+    LOCAL sent = INTEGER ();
+    LOCAL f = FILE ();
+    sent() <- 0;
+    setHeaders(s);
+    IF platform(s) = EcommercePlatform.zid THEN {
+        headers('X-Manager-Token') <- NULL;
+        headers('Access-Token') <- managerToken(s);
+    }
+    FOR iterate(INTEGER b, 0, 1000) AND b * 50 < countSync(s) ORDER b DO {
+        TRY {
+            IF platform(s) = EcommercePlatform.salla THEN
+                EXTERNAL HTTP POST 'https://api.salla.dev/admin/v2/products/quantities/bulkSkus' HEADERS headers
+                    PARAMS JSON FROM skus = (JSON FROM sku = skuSa(s, Product p), quantity = onlineQuantity(s, p) WHERE inBatch(s, p, b))
+                    TO f;
+            ELSE
+                EXTERNAL HTTP PATCH 'https://api.zid.sa/v1/products/' HEADERS headers
+                    PARAMS JSON FROM sku = skuSa(s, Product p), quantity = onlineQuantity(s, p) WHERE inBatch(s, p, b)
+                    TO f;
+            sent() <- sent() (+) (GROUP SUM 1 IF inBatch(s, Product p, b));
+        } CATCH {
+            errors() <- CONCAT '\n', errors(), messageCaughtException();
+        }
+    }
+    NEWSESSION NESTED LOCAL {
+        lastStockSync(s) <- currentDateTime();
+        lastStockMessage(s) <- CONCAT '\n', 'Items sent: ' + sent(), errors();
+        APPLY;
+    }
+}
+
+sendAllStock 'Send the stock to all online stores' () {
+    FOR active(EcommerceStore s) AND syncStock(s) DO sendStock(s);
+}
+
 // ---------- forms ----------
 
 FORM ecommerceStore 'Online store'
@@ -300,7 +369,8 @@ FORM ecommerceStore 'Online store'
     PROPERTIES(s) name, namePlatform, active, accessToken, managerToken SHOWIF platform(s) = EcommercePlatform.zid,
                   nameCompany, nameInvoiceType, nameLocation, nameDefaultCustomer, createCustomers,
                   nameShippingItem, nameAdjustmentItem, namePaymentType, statuses, importFrom,
-                  lastImport READONLY, lastMessage READONLY, countOrders READONLY, importOrders
+                  lastImport READONLY, lastMessage READONLY, countOrders READONLY, importOrders,
+                  nameSkuSource, syncStock, countSync READONLY, lastStockSync READONLY, lastStockMessage READONLY, sendStock
 
     OBJECTS i = Invoice
     PROPERTIES(i) READONLY number, dateTime, nameCustomer, amount, externalId
@@ -347,6 +417,17 @@ DESIGN ecommerceStore {
             MOVE PROPERTY(countOrders(s));
         }
         MOVE PROPERTY(lastMessage(s)) { alignment = STRETCH; panelCaptionVertical = TRUE; }
+        NEW stock {
+            caption = 'Stock';
+            horizontal = TRUE;
+            alignment = STRETCH;
+            MOVE PROPERTY(nameSkuSource(s));
+            MOVE PROPERTY(syncStock(s));
+            MOVE PROPERTY(countSync(s));
+            MOVE PROPERTY(sendStock(s)) { valueClass = 'btn-primary'; }
+            MOVE PROPERTY(lastStockSync(s));
+        }
+        MOVE PROPERTY(lastStockMessage(s)) { alignment = STRETCH; panelCaptionVertical = TRUE; }
         MOVE BOX(i) { caption = 'Imported orders'; }
     }
 }
@@ -355,7 +436,7 @@ FORM ecommerceStores 'Online stores'
     OBJECTS s = EcommerceStore
     PROPERTIES(s) READONLY name, namePlatform, active, lastImport, countOrders
     PROPERTIES(s) NEWSESSION NEW, EDIT, DELETE
-    PROPERTIES() importAllOrders
+    PROPERTIES() importAllOrders, sendAllStock
     LIST EcommerceStore OBJECT s
 ;
 
