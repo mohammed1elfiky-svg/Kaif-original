@@ -96,7 +96,7 @@ for doc in ['test-inv-1', 'test-pay-1', 'test-ret-1', 'test-vis-1', 'test-clo-1'
 
 # a second upload of the same documents (the app resends when the answer was lost) must not duplicate them
 again = post('Distribution.upload', upload)
-check(all(r['result'] == 'ok' for r in again or []), 'resending the same documents is accepted')
+check(len(again or []) == 5 and all(r['result'] == 'ok' for r in again), f'resending the same documents is accepted: {again}')
 
 # ---- server side, as admin ----
 srv = post('KaifTest.distributorCheck', user='admin', password='')

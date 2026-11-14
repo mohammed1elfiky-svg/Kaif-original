@@ -406,20 +406,32 @@ newPayment (Employee e, STRING id, STRING number, DATETIME date, Partner c, NUME
 invoiceByNumber (STRING number, Partner c) = OVERRIDE invoiceMobile(number),
     (GROUP MAX Invoice i IF number(i) = number AND customer(i) = c);
 
-uploadResult = DATA LOCAL STRING (STRING[40]);
+// result of each uploaded document ("ok" or the error), in the order of processing: NESTED, so the results
+// set in the sessions of the documents (NEWSESSION ... APPLY) are kept for the answer
+uploadResultCount = DATA LOCAL NESTED INTEGER ();
+uploadResultId = DATA LOCAL NESTED STRING[40] (INTEGER);
+uploadResultText = DATA LOCAL NESTED STRING (INTEGER);
+uploadResult (STRING[40] id, STRING text) {
+    uploadResultCount() <- (OVERRIDE uploadResultCount(), 0) + 1;
+    uploadResultId(uploadResultCount()) <- id;
+    uploadResultText(uploadResultCount()) <- text;
+}
 
 upload (JSON json) {
     IF Kaif.trialExpired() THEN
         throwException('The trial period has ended. Enter the activation key in Administration -> Activation');
     FOR Employee e = currentUser() AND isDistributor(e) DO {
         IMPORT importDistribution JSON FROM json;
+        uploadResultCount() <- NULL;
+        uploadResultId(INTEGER i) <- NULL;
+        uploadResultText(INTEGER i) <- NULL;
 
         // one session per document: an error in one document does not block the others
 
         // invoices
         FOR invId(INTEGER r) ORDER invDate(r), r DO {
             IF invoiceMobile(invId(r)) THEN
-                uploadResult(invId(r)) <- 'ok';
+                uploadResult(invId(r), 'ok');
             ELSE NEWSESSION NESTED LOCAL {
                 NEW i = Invoice {
                     mobileId(i) <- invId(r);
@@ -444,14 +456,14 @@ upload (JSON json) {
                         newPayment(e, invId(r) + '-p', invNumber(r), invDate(r), customer(i), invPaid(r), invMethod(r), i, NULL);
                 }
                 APPLY;
-                uploadResult(invId(r)) <- IF canceled() THEN applyMessage() ELSE 'ok';
+                uploadResult(invId(r), IF canceled() THEN applyMessage() ELSE 'ok');
             }
         }
 
         // returns (credit notes)
         FOR retId(INTEGER r) ORDER retDate(r), r DO {
             IF billMobile(retId(r)) THEN
-                uploadResult(retId(r)) <- 'ok';
+                uploadResult(retId(r), 'ok');
             ELSE NEWSESSION NESTED LOCAL {
                 NEW b = Bill {
                     mobileId(b) <- retId(r);
@@ -488,26 +500,26 @@ upload (JSON json) {
                     matchDebts(b, vendor(b), amount[Bill](b) (-) retRefund(r), invoiceByNumber(retInvoice(r), vendor(b)));
                 }
                 APPLY;
-                uploadResult(retId(r)) <- IF canceled() THEN applyMessage() ELSE 'ok';
+                uploadResult(retId(r), IF canceled() THEN applyMessage() ELSE 'ok');
             }
         }
 
         // collections
         FOR payId(INTEGER r) ORDER payDate(r), r DO {
             IF incomingPaymentMobile(payId(r)) THEN
-                uploadResult(payId(r)) <- 'ok';
+                uploadResult(payId(r), 'ok');
             ELSE NEWSESSION NESTED LOCAL {
                 newPayment(e, payId(r), payNumber(r), payDate(r), partner(payCustomer(r)), payAmount(r), payMethod(r),
                            invoiceByNumber(payInvoice(r), partner(payCustomer(r))), payNote(r));
                 APPLY;
-                uploadResult(payId(r)) <- IF canceled() THEN applyMessage() ELSE 'ok';
+                uploadResult(payId(r), IF canceled() THEN applyMessage() ELSE 'ok');
             }
         }
 
         // visits
         FOR visId(INTEGER r) ORDER visDate(r), r DO {
             IF visitMobile(visId(r)) THEN
-                uploadResult(visId(r)) <- 'ok';
+                uploadResult(visId(r), 'ok');
             ELSE NEWSESSION NESTED LOCAL {
                 NEW v = Visit {
                     mobileId(v) <- visId(r);
@@ -525,14 +537,14 @@ upload (JSON json) {
                     }
                 }
                 APPLY;
-                uploadResult(visId(r)) <- IF canceled() THEN applyMessage() ELSE 'ok';
+                uploadResult(visId(r), IF canceled() THEN applyMessage() ELSE 'ok');
             }
         }
 
         // closings of the day
         FOR cloId(INTEGER r) ORDER cloDate(r), r DO {
             IF closingMobile(cloId(r)) THEN
-                uploadResult(cloId(r)) <- 'ok';
+                uploadResult(cloId(r), 'ok');
             ELSE NEWSESSION NESTED LOCAL {
                 NEW c = Closing {
                     mobileId(c) <- cloId(r);
@@ -554,11 +566,11 @@ upload (JSON json) {
                     }
                 }
                 APPLY;
-                uploadResult(cloId(r)) <- IF canceled() THEN applyMessage() ELSE 'ok';
+                uploadResult(cloId(r), IF canceled() THEN applyMessage() ELSE 'ok');
             }
         }
 
-        EXPORT JSON FROM id = STRING[40] s, result = uploadResult(s) WHERE uploadResult(s);
+        EXPORT JSON FROM id = uploadResultId(INTEGER i), result = uploadResultText(i) WHERE uploadResultId(i) ORDER i;
     } ELSE
         throwException('The current user is not a distributor');
 } @@api;
