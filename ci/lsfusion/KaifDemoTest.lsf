@@ -96,6 +96,8 @@ runDemo () {
     IF NOT scenarioRan() THEN {
         runScenario();
         runPacking();
+        setupDistributor();
+        runPayroll();
         NEWSESSION { costBeforeRecalc() <- totalCost(lastPacking()); APPLY; }
         Inventory.recalculateCost(subtract(currentDate(), 1));
         NEWSESSION { scenarioRan() <- TRUE; APPLY; }
@@ -138,6 +140,123 @@ receiptPdf () {
 creditNotePdf () {
     billTemplate() <- GROUP MAX BillTemplate tm IF template(tm) = 'CreditNoteSa.jrxml';
     PRINT Invoicing.printBill OBJECTS o = lastReturn() PDF TO exportFile;
+} @@api;
+
+// ---------- distributor: login d01 / test123 for the first distributor (the app scenario in ci/demo/distributor.py) ----------
+
+demoDistributor () = GROUP MAX Employee e IF Distribution.documentPrefix(e) = 'D01';
+
+setupDistributor () {
+    NEWSESSION {
+        FOR Employee e = demoDistributor() DO {
+            login(e) <- 'd01';
+            calculateBase64Hash('SHA-256', 'test123');
+            sha256Password(e) <- calculatedHash();
+        }
+        APPLY;
+    }
+}
+
+vanOf () = Distribution.vanLocation(demoDistributor());
+mobileInvoice () = Distribution.invoiceMobile('test-inv-1');
+mobileReturn () = Distribution.billMobile('test-ret-1');
+mobilePayment () = Distribution.incomingPaymentMobile('test-pay-1');
+mobileClosing () = GROUP MAX Distribution.Closing c IF Distribution.mobileId(c) = 'test-clo-1';
+
+distributorCheck () {
+    EXPORT JSON FROM
+        invoiceNumber = number(mobileInvoice()),
+        invoiceAmount = amount(mobileInvoice()),
+        invoiceVat = taxAmount(mobileInvoice()),
+        invoiceLines = (GROUP SUM 1 IF invoice(InvoiceLine l) = mobileInvoice()),
+        invoicePaid = paid(mobileInvoice()),
+        invoiceLocation = name(location(mobileInvoice())),
+        returnNumber = number(mobileReturn()),
+        returnAmount = amount[Bill](mobileReturn()),
+        returnLines = (GROUP SUM 1 IF bill(BillLine l) = mobileReturn()),
+        paymentAmount = amount(mobilePayment()),
+        visits = (GROUP SUM 1 IF Distribution.distributor(Distribution.Visit v) = demoDistributor()),
+        closingNumber = Distribution.number(mobileClosing()),
+        closingLines = (GROUP SUM 1 IF Distribution.closing(Distribution.ClosingLine l) = mobileClosing()),
+        closingDifferences = Distribution.countDifferences(mobileClosing()),
+        vanStock = (GROUP SUM onHand(vanOf(), Product p)),
+        firstItemVanStock = onHand(vanOf(), (GROUP MAX Product p IF dataName(p) = 'شاي الكيف الأصلي فاخر 100 كيس'));
+} @@api;
+
+// ---------- payroll: a Saudi employee (3 years, full month) and a non-Saudi hired on the 16th ----------
+
+lastPayslipBatch () = GROUP MAX PayslipBatch b;
+payslipOf (STRING first) = GROUP MAX Payslip p IF MasterData.firstName(employee(p)) = first AND batch(p) = lastPayslipBatch();
+lineOf (STRING first, STRING sid) = total(payslipOf(first), categorySa(sid));
+
+runPayroll () {
+    NEWSESSION {
+        NEW e = Employee {
+            MasterData.firstName(e) <- 'سعد'; MasterData.lastName(e) <- 'الدوسري';
+            legalEntity(e) <- defaultCompany();
+            nationality(e) <- GROUP MAX Country c IF id(c) = 'SA' OR alpha2(c) = 'SA';
+            hireDateSa(e) <- subtract(currentDate(), 1094);
+            basicSalarySa(e) <- 6000.00; housingAllowanceSa(e) <- 1500.00; transportAllowanceSa(e) <- 500.00;
+        }
+        NEW e = Employee {
+            MasterData.firstName(e) <- 'راجيش'; MasterData.lastName(e) <- 'كومار';
+            legalEntity(e) <- defaultCompany();
+            nationality(e) <- GROUP MAX Country c IF id(c) = 'IN' OR alpha2(c) = 'IN';
+            hireDateSa(e) <- sum(firstDayOfMonth(currentDate()), 15);
+            basicSalarySa(e) <- 3000.00; housingAllowanceSa(e) <- 750.00;
+        }
+        NEW b = PayslipBatch {
+            name(b) <- 'رواتب الشهر';
+            period(b) <- interval(firstDayOfMonth(currentDate()), lastDayOfMonth(currentDate()));
+            company(b) <- defaultCompany();
+            type(b) <- GROUP MAX PayslipType t;
+            FOR legalEntity(Employee e) = defaultCompany() AND basicSalarySa(e) INLINE NEW p = Payslip DO {
+                batch(p) <- b; employee(p) <- e; period(p) <- period(b); company(p) <- company(b); type(p) <- type(b);
+            }
+        }
+        APPLY;
+        IF canceled() THEN throwException('Payroll: ' + applyMessage());
+    }
+    NEWSESSION {
+        FOR batch(Payslip p) = lastPayslipBatch() DO generate(p);
+        APPLY;
+        IF canceled() THEN throwException('Payroll generate: ' + applyMessage());
+    }
+}
+
+payrollCheck () {
+    EXPORT JSON FROM
+        saudiBasic = lineOf('سعد', 'basic'), saudiHousing = lineOf('سعد', 'housing'), saudiTransport = lineOf('سعد', 'transport'),
+        saudiGosi = lineOf('سعد', 'gosi'), saudiGosiCompany = lineOf('سعد', 'gosiCompany'),
+        saudiNet = netWage(payslipOf('سعد')),
+        saudiServiceYears = serviceYearsSa(GROUP MAX Employee e IF MasterData.firstName(e) = 'سعد'),
+        saudiEosTermination = eosFullSa(GROUP MAX Employee e IF MasterData.firstName(e) = 'سعد'),
+        saudiEosResignation = eosResignationSa(GROUP MAX Employee e IF MasterData.firstName(e) = 'سعد'),
+        saudiLeaveAccrued = accruedLeaveSa(GROUP MAX Employee e IF MasterData.firstName(e) = 'سعد'),
+        foreignBasic = lineOf('راجيش', 'basic'), foreignHousing = lineOf('راجيش', 'housing'),
+        foreignGosi = lineOf('راجيش', 'gosi'), foreignGosiCompany = lineOf('راجيش', 'gosiCompany'),
+        foreignNet = netWage(payslipOf('راجيش')),
+        monthDays = daysBetweenDates(lastDayOfMonth(currentDate()), firstDayOfMonth(currentDate())) + 1,
+        foreignDaysWorked = daysBetweenDates(lastDayOfMonth(currentDate()), sum(firstDayOfMonth(currentDate()), 15)) + 1,
+        isSaudiFound = TRUE IF (GROUP SUM 1 IF isSaudiSa(Employee e)),
+        payslips = (GROUP SUM 1 IF batch(Payslip p) = lastPayslipBatch());
+} @@api;
+
+// ---------- VAT return of the current month ----------
+
+vatCheck () {
+    LOCAL df = DATE (); LOCAL dt = DATE ();
+    df() <- firstDayOfMonth(currentDate()); dt() <- lastDayOfMonth(currentDate());
+    EXPORT JSON FROM
+        box1Amount = amountBox(VatReturnBox.b1, defaultCompany(), df(), dt()),
+        box1Adjustment = adjustmentBox(VatReturnBox.b1, defaultCompany(), df(), dt()),
+        box1Vat = vatBox(VatReturnBox.b1, defaultCompany(), df(), dt()),
+        box7Amount = amountBox(VatReturnBox.b7, defaultCompany(), df(), dt()),
+        box12Vat = vatBox(VatReturnBox.b12, defaultCompany(), df(), dt()),
+        box13VatDue = vatBox(VatReturnBox.b13, defaultCompany(), df(), dt()),
+        salesInvoices = (GROUP SUM 1 IF inPeriodSa(Invoice i, defaultCompany(), df(), dt())),
+        salesVatSum = (GROUP SUM vatSa(Invoice i) IF inPeriodSa(i, defaultCompany(), df(), dt()) AND NOT isRefund(i)),
+        creditNotesVatSum = (GROUP SUM vatSa(Bill b) IF inPeriodSa(b, defaultCompany(), df(), dt()) AND isCreditNote(b));
 } @@api;
 
 // the next web client start shows this form (the screenshots)

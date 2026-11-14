@@ -93,6 +93,16 @@ jobs:
           ls -la out
           grep -q '"invoice"' out/scenario.json
 
+      - name: Distributor app (download, upload, closing) through the API
+        id: distributor
+        continue-on-error: true
+        run: python3 ci/demo/distributor.py
+
+      - name: Payroll and VAT return checks
+        id: checks
+        continue-on-error: true
+        run: python3 ci/demo/checks.py
+
       - name: Screenshots
         run: |
           cd ci/demo
@@ -119,6 +129,13 @@ jobs:
           docker logs client > out/client.log 2>&1 || true
           # the lsFusion stack of each server error (modules and lines), without the Java frames
           grep -n -A150 "ERROR SystemLogger" server.log | grep -v -E "^[0-9]+-\s+at |\.\.\. [0-9]+ more" | head -150 || true
+
+      - name: Result of the checks
+        if: always()
+        run: |
+          echo "distributor: ${{ steps.distributor.outcome }}, payroll/VAT: ${{ steps.checks.outcome }}"
+          test "${{ steps.distributor.outcome }}" = success
+          test "${{ steps.checks.outcome }}" = success
 
       - uses: actions/upload-artifact@v4
         if: always()

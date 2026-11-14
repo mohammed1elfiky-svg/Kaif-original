@@ -1,7 +1,7 @@
 MODULE DistributionInitial;
 
 REQUIRE Distribution, InvoiceShipmentInitial, CreditNoteReceiptInitial, CreditNoteInitial,
-        IncomingPaymentInitial, OutgoingPaymentInitial, DefaultData;
+        IncomingPaymentInitial, OutgoingPaymentInitial, DefaultData, SalesPricelistInvoice, SalesPriceTypeInitial;
 
 NAMESPACE Distribution;
 
@@ -14,6 +14,8 @@ loadDefaultData () + {
         shipmentType(t) <- shipmentType('shipment');
         autoCreateShipment(t) <- TRUE;
         billType(t) <- billType('creditnote');
+        // the prices of the app: retail prices with VAT (the price list, or the sales price of the item)
+        priceType(t) <- priceType('retail');
         invoiceType() <- t;
     }
     NEW b = BillType {
