@@ -2,9 +2,9 @@ MODULE Distribution;
 
 REQUIRE Employee, Location, InvLedger, ProductSku, BarCode, TaxItem, PartnerGeo, PartnerSales,
         SalesPriceType, SalesPricelistValue, SalesPricelistInvoice, PaymentTermsSales,
-        InvoiceShipment, InvoiceDebt, DebtLimit, IncomingPaymentDebt, IncomingPaymentDone, CashAccount,
+        ItemSalesPack, InvoiceShipment, InvoiceDebt, DebtLimit, IncomingPaymentDebt, IncomingPaymentDone, CashAccount,
         CreditNote, CreditNoteReceipt, BillDebt, OutgoingPaymentDebt, OutgoingPaymentDone,
-        PartnerSa, TrialSa;
+        AdjustmentDone, AdjustmentInProgress, PartnerSa, TrialSa;
 
 NAMESPACE Distribution;
 
@@ -128,6 +128,31 @@ counted 'Counted' = DATA NUMERIC[16,3] (ClosingLine);
 difference 'Difference' (ClosingLine l) = counted(l) (-) expected(l);
 countDifferences 'Stock differences' (Closing c) = GROUP SUM 1 IF closing(ClosingLine l) = c AND difference(l) != 0;
 
+// stock adjustment of the van from the count of the closing (created by the accountant after checking it)
+adjustment = DATA Adjustment (Closing);
+numberAdjustment 'Stock adjustment' (Closing c) = number(adjustment(c));
+
+createAdjustment 'Create stock adjustment' (Closing c) {
+    NEWSESSION {
+        NEW a = Adjustment {
+            dateTime(a) <- dateTime(c);
+            location(a) <- vanLocation(distributor(c));
+            type(a) <- AdjustmentType.manual;
+            note(a) <- ISTRING[50](number(c));
+            FOR closing(ClosingLine l) = c AND difference(l) != 0 AND Product p = item(l) INLINE NEW al = AdjustmentLine DO {
+                adjustment(al) <- a;
+                product(al) <- p;
+                location(al) <- location(a);
+                realQuantity(al) <- counted(l);
+            }
+            adjustment(c) <- a;
+            APPLY;
+            IF NOT canceled() THEN
+                SHOW adjustment OBJECTS a = a DOCKED;
+        }
+    }
+}
+
 // ---------- download: POST /exec/Distribution.getData ----------
 
 distributionPriceType (Partner p) = OVERRIDE priceType(p), priceType(invoiceType());
@@ -197,6 +222,8 @@ getData () {
                 barcode = idBarCode(i),
                 uom = nameUom(i),
                 tax = salesTax(i),
+                packUom = nameSalesUom(i),
+                packRatio = salesPackRatio(i),
                 onHand = vanOnHand(e, i)
                 WHERE id(i) AND active(i) AND (vanOnHand(e, i) > 0 OR distributorPrice(e, i))),
             prices = (JSON FROM
@@ -549,7 +576,8 @@ FORM visits 'Visits'
 FORM closing 'Closing of the day'
     OBJECTS c = Closing PANEL
     PROPERTIES(c) number, dateTime, nameDistributor, salesAmount, creditAmount, returnsAmount, collectedBank,
-                  cashExpected, cashHanded, cashDifference READONLY, note
+                  cashExpected, cashHanded, cashDifference READONLY, note,
+                  numberAdjustment READONLY, createAdjustment SHOWIF countDifferences(c) AND NOT adjustment(c)
 
     OBJECTS l = ClosingLine
     PROPERTIES(l) nameItem, expected, counted, difference READONLY

@@ -1,7 +1,6 @@
 import 'package:intl/intl.dart' show DateFormat;
 import 'package:material_ui/material_ui.dart';
 
-import '../core/money.dart';
 import '../data/models.dart';
 import 'closing_screen.dart';
 import 'customer_screen.dart';
@@ -171,7 +170,7 @@ class _StockTab extends StatelessWidget {
           child: ListTile(
             title: Text(it.name),
             subtitle: Text(it.barcode),
-            trailing: Text('${formatQty(repo.stock(it.id))} ${it.uom}', style: Theme.of(context).textTheme.titleMedium),
+            trailing: Text(formatPacks(repo.stock(it.id), it), style: Theme.of(context).textTheme.titleMedium),
           ),
         ),
     ]);

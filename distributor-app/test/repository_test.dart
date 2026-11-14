@@ -273,4 +273,12 @@ void main() {
     expect(inv2.number, 'D01-000043');
     expect(numberSequence('D01-R-000123'), 123);
   });
+
+  test('cartons and pieces', () {
+    final it = Item('NM9', 'شاي', '', 'حبة', 1500, 0, 'كرتون', 24000);
+    expect(formatPacks(30000, it), '1 كرتون + 6 حبة');
+    expect(formatPacks(48000, it), '2 كرتون');
+    expect(formatPacks(5000, it), '5 حبة');
+    expect(formatPacks(5000, Item('NM8', 'x', '', 'كغ', 0, 0)), '5 كغ');
+  });
 }

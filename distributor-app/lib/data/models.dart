@@ -97,9 +97,25 @@ class Item {
   final String id, name, barcode, uom;
   final int taxRate; // hundredths of a percent
   final int onHand; // thousandths, van stock as of download
-  Item(this.id, this.name, this.barcode, this.uom, this.taxRate, this.onHand);
+  final String packUom; // sales package (carton), empty when none
+  final int packRatio; // base units in a package, thousandths (24 pieces = 24000)
+  Item(this.id, this.name, this.barcode, this.uom, this.taxRate, this.onHand, [this.packUom = '', this.packRatio = 0]);
+
+  bool get hasPack => packRatio > 1000 && packUom.isNotEmpty;
+
   factory Item.fromJson(Map<String, dynamic> j) => Item(_s(j['id']), _s(j['name']), _s(j['barcode']),
-      _s(j['uom']), toHalalas(j['tax']), toMilli(j['onHand']));
+      _s(j['uom']), toHalalas(j['tax']), toMilli(j['onHand']), _s(j['packUom']), toMilli(j['packRatio']));
+}
+
+/// 30 pieces with cartons of 24 -> "1 كرتون + 6 حبة"
+String formatPacks(int qtyMilli, Item item) {
+  if (!item.hasPack) return '${formatQty(qtyMilli)} ${item.uom}';
+  final packs = qtyMilli ~/ item.packRatio;
+  final rest = qtyMilli - packs * item.packRatio;
+  return [
+    if (packs > 0) '$packs ${item.packUom}',
+    if (rest > 0 || packs == 0) '${formatQty(rest)} ${item.uom}',
+  ].join(' + ');
 }
 
 class Price {

@@ -90,14 +90,28 @@ class _SaleScreenState extends State<SaleScreen> {
       body: ListView(padding: const EdgeInsets.only(bottom: 90), children: [
         for (final l in ls)
           Card(
-            child: ListTile(
-              title: Text(l.itemName),
-              subtitle: Text('${money(l.price)} × ${formatQty(l.qty)} ${l.uom}  ·  المتوفر ${formatQty(repo.stock(l.itemId))}'),
-              trailing: Row(mainAxisSize: MainAxisSize.min, children: [
-                IconButton(icon: const Icon(Icons.remove_circle_outline), onPressed: () => setQty(l.itemId, l.qty - 1000)),
-                Text(formatQty(l.qty), style: Theme.of(context).textTheme.titleMedium),
-                IconButton(icon: const Icon(Icons.add_circle_outline), onPressed: () => setQty(l.itemId, l.qty + 1000)),
-              ]),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              child: Builder(builder: (context) {
+                final item = repo.data!.item(l.itemId)!;
+                Widget stepper(String unit, int step) => Row(mainAxisSize: MainAxisSize.min, children: [
+                      IconButton(icon: const Icon(Icons.remove_circle_outline), onPressed: () => setQty(l.itemId, l.qty - step)),
+                      Text(unit, style: Theme.of(context).textTheme.bodyMedium),
+                      IconButton(icon: const Icon(Icons.add_circle_outline), onPressed: () => setQty(l.itemId, l.qty + step)),
+                    ]);
+                return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(l.itemName, style: Theme.of(context).textTheme.titleMedium),
+                  Text('${money(l.price)} / ${l.uom}  ·  المتوفر ${formatPacks(repo.stock(l.itemId), item)}'),
+                  Row(children: [
+                    Expanded(
+                      child: Text(formatPacks(l.qty, item),
+                          style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
+                    ),
+                    if (item.hasPack) stepper(item.packUom, item.packRatio),
+                    stepper(l.uom, 1000),
+                  ]),
+                ]);
+              }),
             ),
           ),
         if (ls.isEmpty)
