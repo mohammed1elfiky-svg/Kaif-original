@@ -40,7 +40,27 @@
 5. في **الفوترة ← العمليات**: تجد **الزيارات** و**إقفالات اليوم** لمراجعة المحاسب.
 6. يدخل الموزع في التطبيق بعنوان الخادم واسم مستخدمه وكلمة مروره.
 
-## البناء
+## البناء التلقائي على GitHub
+- **مع كل تحديث للتطبيق:** يفحص GitHub الكود ويشغّل الاختبارات ويبني ملف APK.
+  - **التحميل:** صفحة المستودع ← **Actions** ← **Distributor app** ← آخر تشغيل ← **Artifacts**.
+- **إصدار رسمي:** أنشئ وسماً باسم الإصدار، مثل `app-v1.1.0`. يُنشأ **Release** والملف مرفق به، ورقم الإصدار يكون 1.1.0.
+- **بناء يدوي:** Actions ← Distributor app ← **Run workflow**.
+
+### مفتاح التوقيع
+مفتاح التوقيع **ضروري** لأمرين: تحديث التطبيق على الجوالات بدون حذفه، والنشر على Google Play.
+- **بدون المفتاح:** يُوقَّع الملف بمفتاح تجريبي، وهذا يكفي للتجربة فقط.
+- **إنشاء المفتاح:** مرة واحدة فقط. **احتفظ بنسخة منه، وبكلمات مروره، في مكان آمن.** إذا ضاع لا يمكن تحديث التطبيق المثبّت.
+```
+keytool -genkey -v -keystore alkaif-upload.jks -keyalg RSA -keysize 2048 -validity 10000 -alias alkaif
+base64 -w0 alkaif-upload.jks > alkaif-upload.b64
+```
+- **إضافة المفتاح إلى GitHub:** في Settings ← Secrets and variables ← Actions، أضف:
+  - `ANDROID_KEYSTORE_BASE64`: محتوى الملف `alkaif-upload.b64`.
+  - `ANDROID_KEYSTORE_PASSWORD`.
+  - `ANDROID_KEY_ALIAS`: القيمة `alkaif`.
+  - `ANDROID_KEY_PASSWORD`.
+
+## البناء على جهاز
 ```
 flutter pub get
 flutter test

@@ -1,0 +1,112 @@
+# Builds the distributor app (distributor-app/): analysis, tests and the Android APK.
+#  - every push / pull request that changes the app: the APK is attached to the run (Actions -> run -> Artifacts)
+#  - a tag "app-v1.2.0": also a GitHub release with the APK, version 1.2.0
+#  - manual start: Actions -> Distributor app -> Run workflow
+#
+# Release signing (optional, needed to update an installed app and for Google Play), repository secrets:
+#   ANDROID_KEYSTORE_BASE64  the .jks keystore encoded with base64
+#   ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD
+# Without them the APK is signed with a debug key (fine for testing).
+name: Distributor app
+
+on:
+  push:
+    branches: ['**']
+    tags: ['app-v*']
+    paths: ['distributor-app/**', '.github/workflows/distributor-app.yml']
+  pull_request:
+    paths: ['distributor-app/**', '.github/workflows/distributor-app.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: distributor-app-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: distributor-app
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: '3.50.0'
+          cache: true
+
+      - name: Dependencies
+        run: flutter pub get
+
+      - name: Analyze
+        run: flutter analyze
+
+      - name: Tests
+        run: flutter test
+
+      - name: Version
+        id: version
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/app-v* ]]; then
+            name="${GITHUB_REF#refs/tags/app-v}"
+          else
+            name="$(grep '^version:' pubspec.yaml | sed 's/version: *//; s/+.*//')"
+          fi
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+          echo "code=${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+
+      - name: Signing key
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "::warning::No signing key in the repository secrets: the APK is signed with a debug key"
+            exit 0
+          fi
+          echo "$KEYSTORE_BASE64" | base64 --decode > android/app/upload.jks
+          cat > android/key.properties <<PROPS
+          storeFile=upload.jks
+          storePassword=$KEYSTORE_PASSWORD
+          keyAlias=$KEY_ALIAS
+          keyPassword=$KEY_PASSWORD
+          PROPS
+
+      - name: Build APK
+        run: >
+          flutter build apk --release
+          --build-name=${{ steps.version.outputs.name }}
+          --build-number=${{ steps.version.outputs.code }}
+
+      - name: Rename
+        id: apk
+        run: |
+          file="alkaif-distributor-${{ steps.version.outputs.name }}-${{ steps.version.outputs.code }}.apk"
+          mv build/app/outputs/flutter-apk/app-release.apk "build/$file"
+          echo "file=distributor-app/build/$file" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: alkaif-distributor-apk
+          path: ${{ steps.apk.outputs.file }}
+          retention-days: 30
+
+      - name: Release
+        if: startsWith(github.ref, 'refs/tags/app-v')
+        uses: softprops/action-gh-release@v2
+        with:
+          name: تطبيق الموزعين ${{ steps.version.outputs.name }}
+          files: ${{ steps.apk.outputs.file }}
