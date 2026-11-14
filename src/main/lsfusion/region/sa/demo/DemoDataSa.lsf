@@ -170,7 +170,7 @@ loadDemoDataDo () {
         }
         FOR Employee d = (GROUP MAX Employee e IF documentPrefix(e) = 'D02') DO {
             demoCustomer('تموينات الحرمين', 'الرياض', 'النسيم', '0552000001', NULL, 3000.00, d, NULL, TRUE, NULL, 1);
-            demoCustomer('هايبر الوفرة', 'الرياض', 'الروضة', '0552000002', '300000000000004', 20000.00, d, NULL, TRUE, NULL, 2);
+            demoCustomer('هايبر الوفرة', 'الرياض', 'الروضة', '0552000002', '300000000000013', 20000.00, d, NULL, TRUE, NULL, 2);
             demoCustomer('مطعم البيت الشعبي', 'الرياض', 'الشفا', '0552000003', NULL, 2500.00, d, NULL, TRUE, NULL, 3);
         }
 
