@@ -53,11 +53,37 @@ runScenario () {
     }
 }
 
+// packing: 100 boxes of the premium tea from the loose tea, bags and boxes (bill of materials of the demo data)
+packedProduct () = GROUP MAX Product p IF dataName(p) = 'شاي الكيف الأصلي فاخر 100 كيس';
+lastPacking () = GROUP MAX ManufacturingOrder o;
+
+runPacking () {
+    NEWSESSION {
+        NEW o = ManufacturingOrder {
+            type(o) <- GROUP MAX ManufacturingOrderType t IF NOT unbuild(t);
+            item(o) <- packedProduct();
+            bom(o) <- dataDefaultBom(packedProduct());
+            company(o) <- defaultCompany();
+            materialsLocation(o) <- demoWarehouse();
+            productsLocation(o) <- demoWarehouse();
+            scheduledDateTime(o) <- currentDateTime();
+            fillByQuantity(o, 100.0);
+            consumed(ConsumedLine l) <- toConsume(l) WHERE manufacturingOrder(l) = o;
+            produced(FinishedLine l) <- toProduce(l) WHERE manufacturingOrder(l) = o;
+            executionDateTime(o) <- currentDateTime();
+            done(o) <- TRUE;
+        }
+        APPLY;
+        IF canceled() THEN throwException('Packing: ' + applyMessage());
+    }
+}
+
 scenarioRan = DATA BOOLEAN ();
 
 runDemo () {
     IF NOT scenarioRan() THEN {
         runScenario();
+        runPacking();
         NEWSESSION { scenarioRan() <- TRUE; APPLY; }
     }
     EXPORT JSON FROM
@@ -70,7 +96,12 @@ runDemo () {
         amountWords = amountWordsSa(lastInvoice()),
         creditNote = number(lastReturn()),
         creditNoteAmount = amount[Bill](lastReturn()),
-        warehouseOnHand = (GROUP SUM onHand(demoWarehouse(), Product p));
+        warehouseOnHand = (GROUP SUM onHand(demoWarehouse(), Product p)),
+        packingOrder = number(lastPacking()),
+        packingTotalCost = totalCost(lastPacking()),
+        packingUnitCost = NUMERIC[14,4](totalCost(lastPacking()) / 100.0),
+        packingExpectedUnitCost = 7.00,
+        looseTeaLeftKg = onHand(demoWarehouse(), (GROUP MAX Product p IF dataName(p) = 'شاي أسود كيني سائب (مستورد)'));
 } @@api;
 
 invoicePdf () {

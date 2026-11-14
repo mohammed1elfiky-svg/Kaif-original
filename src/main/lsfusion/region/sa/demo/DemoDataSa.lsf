@@ -2,7 +2,7 @@ MODULE DemoDataSa;
 
 REQUIRE Item, Product, BarCode, ItemSales, ItemSalesPack, ItemUom, Location, Adjustment, AdjustmentDone,
         AdjustmentInProgress, LegalEntity, PartnerSales, PartnerSa, Employee, DebtLimit, Distribution, EcommerceSa,
-        Company, TrialSa;
+        Company, TrialSa, Bom, AdjustmentCost;
 
 NAMESPACE Kaif;
 
@@ -35,11 +35,35 @@ demoProduct (Category c, STRING name, STRING barcode, INTEGER perCarton, NUMERIC
         FOR Location l = demoWarehouse() AND Adjustment a = (GROUP MAX Adjustment x IF location(x) = l AND NOT done(x))
             INLINE NEW al = AdjustmentLine DO {
             adjustment(al) <- a; product(al) <- p; location(al) <- l; realQuantity(al) <- qWarehouse;
+            price(al) <- NUMERIC[14,2](price * 0.6);
         }
         FOR Location l IS Location AND (l = demoVan1() OR l = demoVan2()) AND Adjustment a = (GROUP MAX Adjustment x IF location(x) = l AND NOT done(x))
             INLINE NEW al = AdjustmentLine DO {
             adjustment(al) <- a; product(al) <- p; location(al) <- l; realQuantity(al) <- qVan;
+            price(al) <- NUMERIC[14,2](price * 0.6);
         }
+    }
+}
+
+// raw materials and packing materials (not sold), stock only in the main warehouse
+demoMaterial (Category c, STRING name, Uom u, NUMERIC[16,3] qWarehouse, NUMERIC[14,2] unitCost) {
+    NEW p = Product {
+        dataName(p) <- ISTRING[200](name);
+        category(p) <- c;
+        uom(p) <- u;
+        FOR Location l = demoWarehouse() AND Adjustment a = (GROUP MAX Adjustment x IF location(x) = l AND NOT done(x))
+            INLINE NEW al = AdjustmentLine DO {
+            adjustment(al) <- a; product(al) <- p; location(al) <- l; realQuantity(al) <- qWarehouse;
+            price(al) <- unitCost;
+        }
+    }
+}
+
+demoComponent (Bom b, STRING material, NUMERIC[18,5] q) {
+    FOR Product m = (GROUP MAX Product p IF dataName(p) = material) INLINE NEW cl = ComponentLine DO {
+        bom(cl) <- b;
+        item(cl) <- m;
+        quantity(cl) <- q;
     }
 }
 
@@ -114,6 +138,25 @@ loadDemoDataDo () {
             demoProduct(herbs, 'بابونج طبيعي 25 كيس', '6281000000086', 24, 13.50, 144.0, 24.0);
         }
 
+        // packing: loose imported tea + bags + boxes -> packed tea (Manufacturing -> Bills of materials / Orders)
+        NEW kg = Uom { name(kg) <- 'كجم';
+            NEW raw = Category {
+                name(raw) <- 'مواد خام وتغليف';
+                demoMaterial(raw, 'شاي أسود كيني سائب (مستورد)', kg, 2000.0, 22.00);
+                demoMaterial(raw, 'أكياس شاي فلتر', demoPiece(), 200000.0, 0.02);
+                demoMaterial(raw, 'علبة كرتون مطبوعة 100 كيس', demoPiece(), 3000.0, 0.60);
+            }
+        }
+        FOR Product fp = (GROUP MAX Product p IF dataName(p) = 'شاي الكيف الأصلي فاخر 100 كيس') INLINE NEW b = Bom DO {
+            name(b) <- 'تكييس شاي فاخر 100 كيس';
+            item(b) <- fp;
+            quantity(b) <- 1.0;
+            dataDefaultBom(fp) <- b;
+            demoComponent(b, 'شاي أسود كيني سائب (مستورد)', 0.2);
+            demoComponent(b, 'أكياس شاي فلتر', 100.0);
+            demoComponent(b, 'علبة كرتون مطبوعة 100 كيس', 1.0);
+        }
+
         demoDistributor('خالد', 'العتيبي', 'D01', demoVan1());
         demoDistributor('فهد', 'القحطاني', 'D02', demoVan2());
 
@@ -140,7 +183,7 @@ loadDemoData 'Load demo data' () {
     }
     ASK 'Load demo items, warehouses, distributors and customers?' DO {
         loadDemoDataDo();
-        IF hasItemsDemo() THEN MESSAGE 'Demo data loaded: 8 items, 3 warehouses, 2 distributors, 6 customers';
+        IF hasItemsDemo() THEN MESSAGE 'Demo data loaded: 8 items, 3 packing materials with a bill of materials, 3 warehouses, 2 distributors, 6 customers';
     }
 }
 

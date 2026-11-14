@@ -14,6 +14,7 @@ const screens = [
   ['05-invoice', 'SHOW Invoicing.invoice OBJECTS i = KaifTest.lastInvoice()'],
   ['06-payments', 'SHOW Invoicing.incomingPayments'],
   ['07-returns', 'SHOW Invoicing.bills'],
+  ['07b-packing', 'SHOW Manufacturing.manufacturingOrder OBJECTS o = KaifTest.lastPacking()'],
   ['08-vat-return', 'SHOW Invoicing.vatReturnSa'],
   ['09-online-stores', 'SHOW Ecommerce.ecommerceStores'],
   ['10-activation', 'SHOW Kaif.licenseSa'],
