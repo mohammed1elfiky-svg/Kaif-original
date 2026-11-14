@@ -10,4 +10,9 @@ loadDefaultData () + {
         template(tm) <- 'TaxInvoiceSa.jrxml';
         in(tm, InvoiceType t) <- TRUE;
     }
+    NEW tm = InvoiceTemplate {
+        name(tm) <- 'فاتورة حرارية 80 مم / Receipt 80 mm';
+        template(tm) <- 'TaxInvoiceReceiptSa.jrxml';
+        in(tm, InvoiceType t) <- TRUE;
+    }
 }

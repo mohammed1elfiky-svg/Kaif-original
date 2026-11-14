@@ -1,10 +1,34 @@
 MODULE KaifBrand;
 
-REQUIRE SystemEvents;
+REQUIRE SystemEvents, Utils, Company;
 
 NAMESPACE Utils;
 
-// Kaif brand theme (green / white) for the web client: web/kaif/kaif-theme.css
+// Al-Kaif Al-Asli brand theme for the web client: web/kaif/kaif-theme.css
 onWebClientInit() + {
     onWebClientInit('kaif-theme.css') <- 3;
+}
+
+// Brand logo (resources images/kaif/): set as the application logo, icon and PWA (mobile) icon,
+// and as the company logo, unless they were already set by the administrator.
+onStarted() + {
+    NEWSESSION {
+        IF NOT logicsLogo() THEN {
+            readResource('images/kaif/logo_256.png');
+            logicsLogo() <- IMAGEFILE(resource());
+        }
+        IF NOT logicsIcon() THEN {
+            readResource('images/kaif/logo_64.png');
+            logicsIcon() <- IMAGEFILE(resource());
+        }
+        IF NOT PWAIcon() THEN {
+            readResource('images/kaif/logo_512.png');
+            PWAIcon() <- IMAGEFILE(resource());
+        }
+        FOR Company c = firstCompany() AND countCompany() = 1 AND NOT logo(c) DO {
+            readResource('images/kaif/logo_512.png');
+            logo(c) <- IMAGEFILE(resource());
+        }
+        APPLY;
+    }
 }

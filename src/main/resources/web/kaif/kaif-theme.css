@@ -1,19 +1,22 @@
-/* Kaif brand theme: green and white.
-   Brand colors live in the two variables below; update them once the final brand palette is approved. */
+/* Al-Kaif Al-Asli brand theme, colors taken from the logo:
+   dark green #1F3B2C (outline and lettering), leaf green #52B051, cream #FFF9EB. */
 :root:root {
-    --kaif-green: #0F7A43;
-    --kaif-green-rgb: 15, 122, 67;
-    --kaif-green-dark: #0A5C32;
-    --kaif-green-light: #E8F5EE;
+    --kaif-green: #1F3B2C;
+    --kaif-green-rgb: 31, 59, 44;
+    --kaif-green-dark: #142A1F;
+    --kaif-leaf: #52B051;
+    --kaif-leaf-rgb: 82, 176, 81;
+    --kaif-cream: #FFF9EB;
+    --kaif-green-light: #E7F3E4;
 
     --focus-color: var(--kaif-green);
     --selection-color: var(--kaif-green-light);
-    --selection-color-rgba: rgba(var(--kaif-green-rgb), 0.18);
-    --table-selection-color-rgba: rgba(var(--kaif-green-rgb), 0.10);
-    --column-selection-color-rgba: rgba(var(--kaif-green-rgb), 0.15);
-    --component-hover-border-color: var(--kaif-green);
+    --selection-color-rgba: rgba(var(--kaif-leaf-rgb), 0.25);
+    --table-selection-color-rgba: rgba(var(--kaif-leaf-rgb), 0.12);
+    --column-selection-color-rgba: rgba(var(--kaif-leaf-rgb), 0.20);
+    --component-hover-border-color: var(--kaif-leaf);
     --date-picker-selection-background-color: var(--kaif-green);
-    --option-selected-hover-color: rgba(var(--kaif-green-rgb), 0.35);
+    --option-selected-hover-color: rgba(var(--kaif-leaf-rgb), 0.35);
 
     --bs-primary: var(--kaif-green);
     --bs-primary-rgb: var(--kaif-green-rgb);
