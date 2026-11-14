@@ -1,0 +1,54 @@
+# Checks the lsFusion modules of the system (src/main/lsfusion) on every change: builds the server
+# with the platform and runs it in dry run mode, which compiles and checks all modules (syntax,
+# names, types, forms) without a database and fails with the list of errors.
+name: Server check
+
+on:
+  push:
+    branches: ['**']
+    paths: ['src/**', 'pom.xml', '.github/workflows/server-check.yml']
+  pull_request:
+    paths: ['src/**', 'pom.xml', '.github/workflows/server-check.yml']
+  workflow_dispatch:
+
+concurrency:
+  group: server-check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: Build with the platform
+        run: mvn -B -ntp -P assemble package -DskipTests
+
+      - name: Check the modules (dry run)
+        run: |
+          jar=$(ls -S target/*.jar | head -1)
+          echo "Server jar: $jar"
+          set +e
+          java -Dsettings.dryRun=true -Dlogics.topModule=MyCompanySa -jar "$jar" > dryrun.log 2>&1
+          code=$?
+          set -e
+          tail -n 300 dryrun.log
+          echo "exit code: $code"
+          if [ $code -ne 0 ] || ! grep -q "Dry run finished successfully" dryrun.log; then
+            echo "::error::Errors in the lsFusion modules, see the log above"
+            exit 1
+          fi
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: server-dry-run-log
+          path: dryrun.log
+          retention-days: 14
