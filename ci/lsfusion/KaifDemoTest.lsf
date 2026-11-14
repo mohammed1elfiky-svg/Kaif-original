@@ -1,0 +1,94 @@
+MODULE KaifDemoTest;
+
+REQUIRE MyCompanySa;
+
+NAMESPACE KaifTest;
+
+// Used only by the CI "Demo run" (.github/workflows/demo-run.yml), never in production: the scenario of the
+// presentation through the API and the forms to take the screenshots of.
+
+lastInvoice () = GROUP MAX Invoice i;
+lastReturn () = GROUP MAX Bill b IF Invoicing.isCreditNote(b);
+demoCustomer () = GROUP MAX LegalEntity c IF name(c) = 'أسواق النخبة';
+demoWarehouse () = GROUP MAX Location l IF name(l) = 'المستودع الرئيسي';
+firstProducts (Product p) = PARTITION SUM 1 IF p IS Product ORDER p;
+
+runScenario () {
+    Kaif.loadDemoDataDo();
+    NEWSESSION {
+        NEW i = Invoice {
+            type(i) <- Distribution.invoiceType();
+            dateTime(i) <- currentDateTime();
+            customer(i) <- demoCustomer();
+            location(i) <- demoWarehouse();
+            FOR firstProducts(Product p) <= 3 ORDER p INLINE NEW il = InvoiceLine DO {
+                invoice(il) <- i;
+                Distribution.fillLine(il, p, NUMERIC[16,3](24 * firstProducts(p)), salesPrice(p));
+            }
+            ready(i) <- TRUE;
+            Distribution.newPayment(NULL, 'demo-p1', 'DEMO-R1', currentDateTime(), customer(i), 500.00, 'cash', i, NULL);
+        }
+        APPLY;
+        IF canceled() THEN throwException('Invoice: ' + applyMessage());
+    }
+    NEWSESSION {
+        NEW b = Bill {
+            type(b) <- Distribution.returnBillType();
+            dateTime(b) <- currentDateTime();
+            vendor(b) <- demoCustomer();
+            location(b) <- demoWarehouse();
+            vendorReference(b) <- STRING[30](number(lastInvoice()));
+            FOR firstProducts(Product p) = 1 INLINE NEW bl = BillLine DO {
+                bill(bl) <- b;
+                Distribution.fillLine(bl, p, 3.0, salesPrice(p));
+            }
+            ready(b) <- TRUE;
+            Distribution.matchDebts(b, vendor(b), amount[Bill](b), lastInvoice());
+        }
+        APPLY;
+        IF canceled() THEN throwException('Return: ' + applyMessage());
+    }
+}
+
+scenarioRan = DATA BOOLEAN ();
+
+runDemo () {
+    IF NOT scenarioRan() THEN {
+        runScenario();
+        NEWSESSION { scenarioRan() <- TRUE; APPLY; }
+    }
+    EXPORT JSON FROM
+        items = (GROUP SUM 1 IF Product p IS Product),
+        customers = (GROUP SUM 1 IF isCustomer(LegalEntity c)),
+        invoice = number(lastInvoice()),
+        invoiceAmount = amount(lastInvoice()),
+        invoicePaid = paid(lastInvoice()),
+        zatcaQR = zatcaQR(lastInvoice()),
+        amountWords = amountWordsSa(lastInvoice()),
+        creditNote = number(lastReturn()),
+        creditNoteAmount = amount[Bill](lastReturn()),
+        warehouseOnHand = (GROUP SUM onHand(demoWarehouse(), Product p));
+} @@api;
+
+invoicePdf () {
+    invoiceTemplate() <- GROUP MAX InvoiceTemplate tm IF template(tm) = 'TaxInvoiceSa.jrxml';
+    PRINT Invoicing.printInvoice OBJECTS o = lastInvoice() PDF TO exportFile;
+} @@api;
+
+receiptPdf () {
+    invoiceTemplate() <- GROUP MAX InvoiceTemplate tm IF template(tm) = 'TaxInvoiceReceiptSa.jrxml';
+    PRINT Invoicing.printInvoice OBJECTS o = lastInvoice() PDF TO exportFile;
+} @@api;
+
+creditNotePdf () {
+    billTemplate() <- GROUP MAX BillTemplate tm IF template(tm) = 'CreditNoteSa.jrxml';
+    PRINT Invoicing.printBill OBJECTS o = lastReturn() PDF TO exportFile;
+} @@api;
+
+// the next web client start shows this form (the screenshots)
+demoForm = DATA TEXT ();
+setDemoForm (TEXT f) { NEWSESSION { demoForm() <- f; APPLY; } } @@api;
+
+onWebClientStarted () + {
+    IF demoForm() THEN EVAL 'run() \{ ' + demoForm() + '; \}';
+}
