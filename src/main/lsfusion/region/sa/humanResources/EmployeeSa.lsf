@@ -1,6 +1,6 @@
 MODULE EmployeeSa;
 
-REQUIRE Employee, Bank, CountryP, DateUtils, HumanResourcesSettings;
+REQUIRE Employee, Bank, CountryP, DateUtils, HumanResourcesSettings, UtilsSa;
 
 NAMESPACE MasterData;
 
@@ -44,7 +44,7 @@ CONSTRAINT ibanSa(Employee e) AND NOT validIbanSa(ibanSa(e))
     MESSAGE 'A Saudi IBAN consists of SA and 22 digits';
 
 // length of service
-serviceDaysSa (Employee e, DATE d) = daysBetweenDates(min(d, (OVERRIDE terminationDateSa(e), d)), hireDateSa(e)) + 1 IF hireDateSa(e) <= d;
+serviceDaysSa (Employee e, DATE d) = daysBetweenDates(minDateSa(d, (OVERRIDE terminationDateSa(e), d)), hireDateSa(e)) + 1 IF hireDateSa(e) <= d;
 serviceYearsSa 'Years of service' (Employee e, DATE d) = NUMERIC[8,2](serviceDaysSa(e, d) / 365.0);
 serviceYearsSa 'Years of service' (Employee e) = serviceYearsSa(e, currentDate());
 

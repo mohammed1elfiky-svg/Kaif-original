@@ -1,6 +1,6 @@
 MODULE TrialSa;
 
-REQUIRE SystemEvents, Time, Utils, Invoice, Bill, IncomingPayment, OutgoingPayment, Shipment, Receipt;
+REQUIRE SystemEvents, Time, Utils, Invoice, Bill, IncomingPayment, OutgoingPayment, Shipment, Receipt, UtilsSa;
 
 NAMESPACE Kaif;
 
@@ -29,7 +29,7 @@ verifyLicense INTERNAL 'mycompany.license.VerifyLicenseAction' (TEXT);
 
 isoToDate (STRING s) = FORMULA DATE '(CASE WHEN ($1) ~ \'^[0-9]{4}-[0-9]{2}-[0-9]{2}$\' THEN ($1)::date END)';
 
-licenseDate () = max(currentDate(), (OVERRIDE lastSeenDate(), currentDate()));
+licenseDate () = maxDateSa(currentDate(), (OVERRIDE lastSeenDate(), currentDate()));
 
 licenseActive 'Activated' () = licensee() AND (licenseExpires() = 'never' OR isoToDate(licenseExpires()) >= licenseDate());
 trialDaysLeft 'Trial days left' () = trialDays() - daysBetweenDates(licenseDate(), installDate()) IF installDate() AND NOT licenseActive();

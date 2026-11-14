@@ -6,11 +6,15 @@ name: Demo run
 on:
   push:
     branches: ['**']
-    paths: ['ci/**', '.github/workflows/demo-run.yml']
+    paths: ['ci/**', 'src/**', 'pom.xml', '.github/workflows/demo-run.yml']
   workflow_run:
     workflows: ['Web client']
     types: [completed]
   workflow_dispatch:
+
+concurrency:
+  group: demo-run-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   demo:

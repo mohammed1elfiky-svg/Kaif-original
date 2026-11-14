@@ -7,3 +7,8 @@ NAMESPACE Utils;
 // Arabic amount in words for printed documents (SQL function in resources/sql/region/sa/tafqit.sql):
 // tafqitSar(1150.50) = 'فقط ألف ومائة وخمسون ريال سعودي وخمسون هللة لا غير'
 tafqitSar (NUMERIC n) = FORMULA TEXT 'tafqit_sar($1)';
+
+// the earlier / the later of two dates (min and max of Utils are for numbers only: on dates PostgreSQL fails
+// with "operator does not exist: date + date")
+minDateSa (DATE a, DATE b) = FORMULA DATE 'LEAST($1, $2)';
+maxDateSa (DATE a, DATE b) = FORMULA DATE 'GREATEST($1, $2)';

@@ -1,6 +1,6 @@
 MODULE PayrollSa;
 
-REQUIRE EmployeeSa, PayslipLine, PayslipBatch, PayslipInitial, DefaultData, DateUtils, HumanResourcesSettings;
+REQUIRE EmployeeSa, PayslipLine, PayslipBatch, PayslipInitial, DefaultData, DateUtils, HumanResourcesSettings, UtilsSa;
 
 NAMESPACE Payroll;
 
@@ -87,7 +87,7 @@ CONSTRAINT dateTo(LeaveSa l) < dateFrom(l) MESSAGE 'The end of the leave cannot 
 
 // days of a leave type inside a period
 leaveDays (Employee e, LeaveTypeSa t, DATE df, DATE dt) =
-    GROUP SUM daysBetweenDates(min(dateTo(LeaveSa l), dt), max(dateFrom(l), df)) + 1
+    GROUP SUM daysBetweenDates(minDateSa(dateTo(LeaveSa l), dt), maxDateSa(dateFrom(l), df)) + 1
         IF employee(l) = e AND type(l) = t AND dateFrom(l) <= dt AND dateTo(l) >= df;
 
 // annual leave balance: accrued for the years of service minus the annual leave taken
@@ -141,8 +141,8 @@ DESIGN MasterData.employee {
 periodDays (Payslip p) = daysBetweenDates(endDate(p), startDate(p)) + 1;
 
 // days of the period between the hire and the termination dates
-employedDays (Payslip p) = daysBetweenDates(min(endDate(p), (OVERRIDE terminationDateSa(employee(p)), endDate(p))),
-                                            max(startDate(p), (OVERRIDE hireDateSa(employee(p)), startDate(p)))) + 1;
+employedDays (Payslip p) = daysBetweenDates(minDateSa(endDate(p), (OVERRIDE terminationDateSa(employee(p)), endDate(p))),
+                                            maxDateSa(startDate(p), (OVERRIDE hireDateSa(employee(p)), startDate(p)))) + 1;
 
 unpaidDays 'Unpaid leave days' (Payslip p) = leaveDays(employee(p), LeaveTypeSa.unpaid, startDate(p), endDate(p));
 
