@@ -102,7 +102,8 @@ jobs:
         run: |
           cp server.log out/ || true
           docker logs client > out/client.log 2>&1 || true
-          grep -E "ERROR|Exception" server.log | head -40 || true
+          # the lsFusion stack of each server error (modules and lines), without the Java frames
+          grep -n -A150 "ERROR SystemLogger" server.log | grep -v -E "^[0-9]+-\s+at |\.\.\. [0-9]+ more" | head -150 || true
 
       - uses: actions/upload-artifact@v4
         if: always()
