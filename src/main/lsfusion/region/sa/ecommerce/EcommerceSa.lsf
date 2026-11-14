@@ -1,0 +1,372 @@
+MODULE EcommerceSa;
+
+REQUIRE Invoice, InvoiceShipment, InvoiceDebt, IncomingPaymentDebt, IncomingPaymentDone, LegalEntity, Company,
+        BarCode, Distribution, Utils, Time;
+
+NAMESPACE Ecommerce;
+
+// Online stores on Salla and Zid: the orders are imported as sales invoices (from the warehouse of the
+// store, so the stock goes down), with the shipping cost, the customer (or a default online customer)
+// and the payment. Import by hand from the store card, or on a schedule with the action
+// Ecommerce.importAllOrders (Administration -> Scheduler).
+//
+//  Salla: GET https://api.salla.dev/admin/v2/orders, Authorization: Bearer <access token>
+//         (order details GET /orders/{id}), pagination.totalPages
+//  Zid:   GET https://api.zid.sa/v1/managers/store/orders?payload_type=default,
+//         Authorization: Bearer <authorization token>, X-Manager-Token: <manager token>
+//
+// The responses are read with the JSON functions of PostgreSQL (kaif_try_jsonb in resources/sql/region/sa/json.sql).
+
+// ---------- JSON ----------
+
+// value at a path of comma separated keys / array indexes: jsonValue(t, 'data,0,amounts,total,amount')
+jsonValue (TEXT json, STRING path) = FORMULA TEXT '(kaif_try_jsonb($1) #>> string_to_array($2, \',\'))';
+jsonCount (TEXT json, STRING path) =
+    FORMULA INTEGER 'jsonb_array_length(COALESCE(kaif_try_jsonb($1) #> string_to_array($2, \',\'), \'[]\'::jsonb))';
+jsonNumber (TEXT json, STRING path) = FORMULA NUMERIC[16,4]
+    '(CASE WHEN (kaif_try_jsonb($1) #>> string_to_array($2, \',\')) ~ \'^-?[0-9]+(\\.[0-9]+)?$\' THEN (kaif_try_jsonb($1) #>> string_to_array($2, \',\'))::numeric END)';
+jsonDateTime (TEXT json, STRING path) = FORMULA DATETIME
+    '(CASE WHEN (kaif_try_jsonb($1) #>> string_to_array($2, \',\')) ~ \'^[0-9]{4}-[0-9]{2}-[0-9]{2}\' THEN replace(left(kaif_try_jsonb($1) #>> string_to_array($2, \',\'), 19), \'T\', \' \')::timestamp END)';
+
+isoDate (DATE d) = FORMULA STRING[10] 'to_char(($1), \'YYYY-MM-DD\')';
+
+// ---------- stores ----------
+
+CLASS EcommercePlatform 'Platform' {
+    salla 'Salla',
+    zid 'Zid'
+}
+
+CLASS EcommerceStore 'Online store';
+
+name 'Name' = DATA ISTRING[100] (EcommerceStore) NONULL;
+platform = DATA EcommercePlatform (EcommerceStore) NONULL;
+namePlatform 'Platform' (EcommerceStore s) = staticCaption(platform(s));
+active 'Active' = DATA BOOLEAN (EcommerceStore);
+
+accessToken 'Access token' = DATA TEXT (EcommerceStore);
+managerToken 'Manager token (Zid)' = DATA TEXT (EcommerceStore);
+
+company = DATA Company (EcommerceStore);
+nameCompany 'Company' (EcommerceStore s) = name(company(s));
+invoiceType = DATA InvoiceType (EcommerceStore);
+nameInvoiceType 'Invoice type' (EcommerceStore s) = name(invoiceType(s));
+location = DATA Location (EcommerceStore);
+nameLocation 'Warehouse' (EcommerceStore s) = name(location(s));
+
+defaultCustomer = DATA Partner (EcommerceStore);
+nameDefaultCustomer 'Default customer' (EcommerceStore s) = name(defaultCustomer(s));
+createCustomers 'Create customers' = DATA BOOLEAN (EcommerceStore);
+
+shippingItem = DATA Item (EcommerceStore);
+nameShippingItem 'Shipping service' (EcommerceStore s) = name(shippingItem(s));
+adjustmentItem = DATA Item (EcommerceStore);
+nameAdjustmentItem 'Discounts / rounding service' (EcommerceStore s) = name(adjustmentItem(s));
+
+paymentType = DATA IncomingPaymentType (EcommerceStore);
+namePaymentType 'Payment type (paid online)' (EcommerceStore s) = name(paymentType(s));
+
+dataStatuses 'Statuses to import' = DATA STRING[200] (EcommerceStore);
+statuses 'Statuses to import' (EcommerceStore s) = OVERRIDE dataStatuses(s),
+    (IF platform(s) = EcommercePlatform.salla THEN 'completed,delivering,delivered,shipped' ELSE 'ready,indelivery,delivered');
+importFrom 'Import orders from' = DATA DATE (EcommerceStore);
+
+lastImport 'Last import' = DATA DATETIME (EcommerceStore);
+lastMessage 'Result of the last import' = DATA TEXT (EcommerceStore);
+
+// ---------- imported orders ----------
+
+ecommerceStore = DATA EcommerceStore (Invoice);
+nameEcommerceStore 'Online store' (Invoice i) = name(ecommerceStore(i));
+externalId 'Online order ID' = DATA STRING[50] (Invoice) INDEXED;
+invoiceExternal (EcommerceStore s, STRING[50] id) = GROUP AGGR Invoice i WHERE ecommerceStore(i) = s BY ecommerceStore(i), externalId(i);
+
+countOrders 'Imported orders' (EcommerceStore s) = GROUP SUM 1 IF ecommerceStore(Invoice i) = s;
+
+// ---------- reading of an order ----------
+
+response = DATA LOCAL TEXT ();
+importedCount = DATA LOCAL INTEGER ();
+errors = DATA LOCAL TEXT ();
+
+statusOk (EcommerceStore s, STRING status) = isSubstring(',' + statuses(s) + ',', ',' + status + ',');
+
+// paths of the fields of an order (relative to the order object) by platform
+orderId (EcommerceStore s, TEXT j, STRING o) = jsonValue(j, o + ',id');
+orderNumber (EcommerceStore s, TEXT j, STRING o) =
+    jsonValue(j, o + (IF platform(s) = EcommercePlatform.salla THEN ',reference_id' ELSE ',code'));
+orderStatus (EcommerceStore s, TEXT j, STRING o) =
+    jsonValue(j, o + (IF platform(s) = EcommercePlatform.salla THEN ',status,slug' ELSE ',order_status,code'));
+orderDate (EcommerceStore s, TEXT j, STRING o) =
+    jsonDateTime(j, o + (IF platform(s) = EcommercePlatform.salla THEN ',date,date' ELSE ',created_at'));
+orderTotal (EcommerceStore s, TEXT j, STRING o) =
+    jsonNumber(j, o + (IF platform(s) = EcommercePlatform.salla THEN ',amounts,total,amount' ELSE ',order_total'));
+orderShipping (EcommerceStore s, TEXT j, STRING o) =
+    IF platform(s) = EcommercePlatform.salla THEN jsonNumber(j, o + ',amounts,shipping_cost,amount')
+    ELSE OVERRIDE jsonNumber(j, o + ',shipping,method,cost'), jsonNumber(j, o + ',shipping_cost');
+orderTaxPercent (EcommerceStore s, TEXT j, STRING o) = jsonNumber(j, o + ',amounts,tax,percent') IF platform(s) = EcommercePlatform.salla;
+
+customerName (EcommerceStore s, TEXT j, STRING o) =
+    IF platform(s) = EcommercePlatform.salla
+    THEN CONCAT ' ', jsonValue(j, o + ',customer,first_name'), jsonValue(j, o + ',customer,last_name')
+    ELSE jsonValue(j, o + ',customer,name');
+customerMobile (EcommerceStore s, TEXT j, STRING o) =
+    IF platform(s) = EcommercePlatform.salla
+    THEN CONCAT '', jsonValue(j, o + ',customer,mobile_code'), jsonValue(j, o + ',customer,mobile')
+    ELSE jsonValue(j, o + ',customer,mobile');
+customerEmail (EcommerceStore s, TEXT j, STRING o) = jsonValue(j, o + ',customer,email');
+
+itemsPath (EcommerceStore s, STRING o) = o + (IF platform(s) = EcommercePlatform.salla THEN ',items' ELSE ',products');
+lineSku (TEXT j, STRING l) = jsonValue(j, l + ',sku');
+lineName (TEXT j, STRING l) = jsonValue(j, l + ',name');
+lineQuantity (TEXT j, STRING l) = jsonNumber(j, l + ',quantity');
+// unit price with VAT
+lineGrossPrice (EcommerceStore s, TEXT j, STRING l, NUMERIC taxPercent) =
+    IF platform(s) = EcommercePlatform.salla THEN
+        OVERRIDE jsonNumber(j, l + ',amounts,total,amount') / lineQuantity(j, l),
+                 jsonNumber(j, l + ',amounts,price_without_tax,amount') * (100 (+) taxPercent) / 100,
+                 jsonNumber(j, l + ',price,amount')
+    ELSE
+        OVERRIDE jsonNumber(j, l + ',gross_sale_price'), jsonNumber(j, l + ',gross_price'),
+                 jsonNumber(j, l + ',total') / lineQuantity(j, l), jsonNumber(j, l + ',price');
+
+// the item of a line: by ID, barcode or reference equal to the SKU of the store
+itemSku (STRING sku) = OVERRIDE item(STRING[50](sku)), itemBarCode(STRING[50](sku)),
+    (GROUP MAX Item i IF reference(i) = sku);
+
+customerByMobile (STRING mobile) = GROUP MAX Partner p IF mobile AND
+    regexpReplace(phone(p), '[^0-9]', '', 'g') = regexpReplace(mobile, '[^0-9]', '', 'g');
+
+// ---------- import ----------
+
+importOrder (EcommerceStore s, TEXT j, STRING o) {
+    LOCAL id = STRING[50] ();
+    id() <- STRING[50](orderId(s, j, o));
+    IF NOT id() OR invoiceExternal(s, id()) OR NOT statusOk(s, orderStatus(s, j, o)) THEN RETURN;
+
+    NEWSESSION NESTED LOCAL {
+        LOCAL missing = TEXT ();
+        LOCAL linesTotal = NUMERIC[14,2] ();
+        NEW i = Invoice {
+            ecommerceStore(i) <- s;
+            externalId(i) <- id();
+            type(i) <- invoiceType(s);
+            IF company(s) THEN company(i) <- company(s);
+            number(i) <- STRING[50](namePlatform(s) + '-' + orderNumber(s, j, o));
+            dateTime(i) <- OVERRIDE orderDate(s, j, o), currentDateTime();
+            location(i) <- location(s);
+            taxIncluded(i) <- TRUE;
+            note(i) <- CONCAT ' / ', customerName(s, j, o), customerMobile(s, j, o), customerEmail(s, j, o);
+            skipCreditControl(i) <- TRUE;
+
+            // customer
+            customer(i) <- OVERRIDE customerByMobile(customerMobile(s, j, o)), defaultCustomer(s);
+            IF createCustomers(s) AND customerMobile(s, j, o) AND NOT customerByMobile(customerMobile(s, j, o)) THEN
+                NEW c = LegalEntity {
+                    name(c) <- ISTRING[92](OVERRIDE customerName(s, j, o), customerMobile(s, j, o));
+                    phone(c) <- ISTRING[100](customerMobile(s, j, o));
+                    email(c) <- ISTRING[400](customerEmail(s, j, o));
+                    customer(i) <- c;
+                }
+
+            // goods
+            FOR iterate(INTEGER k, 0, jsonCount(j, itemsPath(s, o)) - 1) DO {
+                LOCAL l = STRING ();
+                l() <- itemsPath(s, o) + ',' + k;
+                IF itemSku(lineSku(j, l())) THEN NEW il = InvoiceLine {
+                    invoice(il) <- i;
+                    Distribution.fillLine(il, itemSku(lineSku(j, l())), NUMERIC[16,3](lineQuantity(j, l())),
+                        NUMERIC[10,2](lineGrossPrice(s, j, l(), orderTaxPercent(s, j, o))));
+                    linesTotal() <- linesTotal() (+) untaxedAmount(il);
+                } ELSE
+                    missing() <- CONCAT ', ', missing(), (CONCAT ' ', lineSku(j, l()), lineName(j, l()));
+            }
+
+            // shipping
+            IF orderShipping(s, j, o) > 0 AND shippingItem(s) THEN NEW il = InvoiceLine {
+                invoice(il) <- i;
+                Distribution.fillLine(il, shippingItem(s), 1.0, NUMERIC[10,2](orderShipping(s, j, o)));
+                linesTotal() <- linesTotal() (+) untaxedAmount(il);
+            }
+
+            // discounts, coupons and rounding: the invoice total is the total of the order
+            IF adjustmentItem(s) AND orderTotal(s, j, o) AND NOT NUMERIC[14,2](orderTotal(s, j, o)) = linesTotal() THEN
+                NEW il = InvoiceLine {
+                    invoice(il) <- i;
+                    Distribution.fillLine(il, adjustmentItem(s), 1.0, NUMERIC[10,2](orderTotal(s, j, o) (-) linesTotal()));
+                }
+
+            ready(i) <- TRUE;
+
+            IF paymentType(s) AND orderTotal(s, j, o) > 0 THEN NEW p = IncomingPayment {
+                type(p) <- paymentType(s);
+                dateTime(p) <- dateTime(i);
+                partner(p) <- customer(i);
+                IF company(s) THEN company(p) <- company(s);
+                amount(p) <- NUMERIC[14,2](orderTotal(s, j, o));
+                reference(p) <- ISTRING[50](number(i));
+                done(p) <- TRUE;
+                paid(p, i) <- NUMERIC[14,2](orderTotal(s, j, o));
+            }
+        }
+        IF missing() THEN {
+            errors() <- CONCAT '\n', errors(), 'Order ' + orderNumber(s, j, o) + ': items not found: ' + missing();
+            CANCEL;
+        } ELSE {
+            APPLY;
+            IF canceled() THEN
+                errors() <- CONCAT '\n', errors(), 'Order ' + orderNumber(s, j, o) + ': ' + applyMessage();
+            ELSE
+                importedCount() <- importedCount() (+) 1;
+        }
+    }
+}
+
+headers = DATA LOCAL STRING (STRING);
+
+setHeaders (EcommerceStore s) {
+    headers(STRING h) <- NULL;
+    headers('Authorization') <- 'Bearer ' + accessToken(s);
+    headers('Accept') <- 'application/json';
+    headers('Accept-Language') <- 'ar';
+    IF platform(s) = EcommercePlatform.zid THEN headers('X-Manager-Token') <- managerToken(s);
+}
+
+get (EcommerceStore s, STRING url) {
+    LOCAL f = FILE ();
+    response() <- NULL;
+    setHeaders(s);
+    TRY {
+        EXTERNAL HTTP GET url HEADERS headers TO f;
+        fileToString(f());
+        response() <- resultString();
+    } CATCH {
+        errors() <- CONCAT '\n', errors(), messageCaughtException();
+    }
+}
+
+ordersUrl (EcommerceStore s, INTEGER page) =
+    IF platform(s) = EcommercePlatform.salla
+    THEN 'https://api.salla.dev/admin/v2/orders?page=' + page + (IF importFrom(s) THEN '&from_date=' + isoDate(importFrom(s)) ELSE '')
+    ELSE 'https://api.zid.sa/v1/managers/store/orders?payload_type=default&per_page=50&page=' + page +
+         (IF importFrom(s) THEN '&date_from=' + isoDate(importFrom(s)) ELSE '');
+
+importOrders 'Import orders' (EcommerceStore s) {
+    importedCount() <- 0;
+    errors() <- NULL;
+    LOCAL page = INTEGER ();
+    LOCAL list = TEXT ();
+    page() <- 1;
+    WHILE page() <= 100 DO {
+        get(s, ordersUrl(s, page()));
+        list() <- response();
+        LOCAL n = INTEGER ();
+        n() <- jsonCount(list(), IF platform(s) = EcommercePlatform.salla THEN 'data' ELSE 'orders');
+        IF NOT n() > 0 THEN BREAK;
+
+        FOR iterate(INTEGER k, 0, n() - 1) DO {
+            IF platform(s) = EcommercePlatform.salla THEN {
+                // the list of Salla has no items: the details of each new order with an imported status
+                IF NOT invoiceExternal(s, STRING[50](jsonValue(list(), 'data,' + k + ',id'))) AND
+                   statusOk(s, jsonValue(list(), 'data,' + k + ',status,slug')) THEN {
+                    get(s, 'https://api.salla.dev/admin/v2/orders/' + jsonValue(list(), 'data,' + k + ',id'));
+                    importOrder(s, response(), 'data');
+                }
+            } ELSE
+                importOrder(s, list(), 'orders,' + k);
+        }
+
+        IF platform(s) = EcommercePlatform.salla AND
+           NOT page() < jsonNumber(list(), 'pagination,totalPages') THEN BREAK;
+        IF platform(s) = EcommercePlatform.zid AND n() < 50 THEN BREAK;
+        page() <- page() + 1;
+    }
+
+    NEWSESSION NESTED LOCAL {
+        lastImport(s) <- currentDateTime();
+        lastMessage(s) <- CONCAT '\n', 'Imported orders: ' + importedCount(), errors();
+        APPLY;
+    }
+}
+
+importAllOrders 'Import the orders of all online stores' () {
+    FOR active(EcommerceStore s) DO importOrders(s);
+}
+
+// ---------- forms ----------
+
+FORM ecommerceStore 'Online store'
+    OBJECTS s = EcommerceStore PANEL
+    PROPERTIES(s) name, namePlatform, active, accessToken, managerToken SHOWIF platform(s) = EcommercePlatform.zid,
+                  nameCompany, nameInvoiceType, nameLocation, nameDefaultCustomer, createCustomers,
+                  nameShippingItem, nameAdjustmentItem, namePaymentType, statuses, importFrom,
+                  lastImport READONLY, lastMessage READONLY, countOrders READONLY, importOrders
+
+    OBJECTS i = Invoice
+    PROPERTIES(i) READONLY number, dateTime, nameCustomer, amount, externalId
+    PROPERTIES(i) NEWSESSION EDIT
+    FILTERS ecommerceStore(i) = s
+    ORDERS dateTime(i) DESC
+
+    EDIT EcommerceStore OBJECT s
+;
+
+DESIGN ecommerceStore {
+    OBJECTS {
+        NEW settings {
+            horizontal = TRUE;
+            alignment = STRETCH;
+            NEW connection {
+                caption = 'Connection';
+                MOVE PROPERTY(name(s));
+                MOVE PROPERTY(namePlatform(s));
+                MOVE PROPERTY(active(s));
+                MOVE PROPERTY(accessToken(s)) { panelCaptionVertical = TRUE; }
+                MOVE PROPERTY(managerToken(s)) { panelCaptionVertical = TRUE; }
+            }
+            NEW invoicing {
+                caption = 'Invoices';
+                MOVE PROPERTY(nameCompany(s));
+                MOVE PROPERTY(nameInvoiceType(s));
+                MOVE PROPERTY(nameLocation(s));
+                MOVE PROPERTY(nameDefaultCustomer(s));
+                MOVE PROPERTY(createCustomers(s));
+                MOVE PROPERTY(nameShippingItem(s));
+                MOVE PROPERTY(nameAdjustmentItem(s));
+                MOVE PROPERTY(namePaymentType(s));
+                MOVE PROPERTY(statuses(s));
+                MOVE PROPERTY(importFrom(s));
+            }
+        }
+        NEW import {
+            caption = 'Import';
+            horizontal = TRUE;
+            alignment = STRETCH;
+            MOVE PROPERTY(importOrders(s)) { valueClass = 'btn-primary'; }
+            MOVE PROPERTY(lastImport(s));
+            MOVE PROPERTY(countOrders(s));
+        }
+        MOVE PROPERTY(lastMessage(s)) { alignment = STRETCH; panelCaptionVertical = TRUE; }
+        MOVE BOX(i) { caption = 'Imported orders'; }
+    }
+}
+
+FORM ecommerceStores 'Online stores'
+    OBJECTS s = EcommerceStore
+    PROPERTIES(s) READONLY name, namePlatform, active, lastImport, countOrders
+    PROPERTIES(s) NEWSESSION NEW, EDIT, DELETE
+    PROPERTIES() importAllOrders
+    LIST EcommerceStore OBJECT s
+;
+
+EXTEND FORM Invoicing.invoices
+    PROPERTIES(i) READONLY nameEcommerceStore
+;
+
+NAVIGATOR {
+    Sales.sales {
+        Sales.operations {
+            NEW ecommerceStores;
+        }
+    }
+}
