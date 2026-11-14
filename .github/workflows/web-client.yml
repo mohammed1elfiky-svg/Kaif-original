@@ -1,0 +1,70 @@
+# Web client in Arabic: compiles the lsFusion web client (GWT) with the Arabic texts of
+# deploy/client/ClientMessages.properties in place of the English ones and publishes the image
+# ghcr.io/<owner>/kaif-client (used by deploy/compose.yaml instead of lsfusion/client).
+# Runs weekly too, so the client follows the 7.0-SNAPSHOT server.
+name: Web client
+
+on:
+  push:
+    branches: ['**']
+    paths: ['deploy/client/**', '.github/workflows/web-client.yml']
+  schedule:
+    - cron: '17 2 * * 0'
+  workflow_dispatch:
+
+concurrency:
+  group: web-client-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/checkout@v4
+        with:
+          repository: lsfusion/platform
+          path: platform
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: Put the Arabic texts and keep one (default) language
+        working-directory: platform/web-client/src/main/java/lsfusion/gwt
+        run: |
+          cp "$GITHUB_WORKSPACE/deploy/client/ClientMessages.properties" client/ClientMessages.properties
+          # only the default permutation: the Arabic texts for every user, Latin digits, faster build
+          sed -i 's|<extend-property name="locale" values="[^"]*"/>|<extend-property name="locale" values="en"/>|; s|<set-property name="locale" value="[^"]*"/>|<set-property name="locale" value="en"/>|' main.gwt.xml
+          grep -n 'name="locale"' main.gwt.xml
+          rm -f client/ClientMessages_*.properties
+
+      - name: Compile the web client
+        working-directory: platform
+        env:
+          MAVEN_OPTS: -Xmx5g
+        run: |
+          mvn -B -ntp -pl web-client -am package -DskipTests
+          cp web-client/target/lsfusion-client-*.war "$GITHUB_WORKSPACE/deploy/client/ROOT.war"
+          ls -la "$GITHUB_WORKSPACE/deploy/client"
+
+      - uses: docker/login-action@v3
+        if: github.event_name != 'pull_request'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        run: |
+          image="ghcr.io/$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')/kaif-client"
+          docker build -t "$image:latest" -t "$image:${GITHUB_SHA::7}" deploy/client
+          docker push "$image:latest"
+          docker push "$image:${GITHUB_SHA::7}"
