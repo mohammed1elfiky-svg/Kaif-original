@@ -205,6 +205,138 @@ looseTea () = GROUP MAX Product p IF dataName(p) = 'شاي أسود كيني س�
 looseTeaPrice () = GROUP MAX price(InCostLedger il) IF product(il) = looseTea();
 consumedLedgers () = GROUP SUM 1 IF manufacturingOrder(line(ConsumedOutCostLedger l)) = lastPacking();
 consumedAmount () = GROUP SUM amount(ConsumedOutCostLedger l) IF manufacturingOrder(line(l)) = lastPacking();
+
+// ---------- import file: 1000 kg of Kenyan tea at 20 SAR + 4000 SAR customs and freight -> 24 SAR/kg ----------
+
+lastImportFile () = GROUP MAX Purchase.ImportShipmentSa s;
+importGoodsLine () = GROUP MAX BillLine l IF Purchase.importShipmentSa(bill(l)) = lastImportFile() AND item(l) IS Product;
+importReceiptPrice () = GROUP LAST price(InCostLedger il) ORDER dateTime(il), il WHERE product(il) = looseTea() AND quantity(il) = 1000;
+
+runImport () {
+    NEWSESSION {
+        NEW f = Purchase.ImportShipmentSa {
+            containerNumber(f) <- 'MSKU1234567';
+            NEW vendor = LegalEntity {
+                name(vendor) <- 'Kenya Tea Exporters Ltd';
+                country(vendor) <- GROUP MAX Country c IF alpha2(c) = 'KE';
+                NEW b = Bill {
+                    type(b) <- GROUP MAX BillType t IF id(t) = 'bill';
+                    vendor(b) <- vendor;
+                    dateTime(b) <- currentDateTime();
+                    location(b) <- demoWarehouse();
+                    Purchase.importShipmentSa(b) <- f;
+                    NEW l = BillLine {
+                        bill(l) <- b;
+                        Distribution.fillLine(l, looseTea(), 1000.0, 20.00);
+                        in(l, Tax t) <- NULL;
+                        taxAmount(Tax t, l) <- NULL;
+                    }
+                    ready(b) <- TRUE;
+                }
+            }
+            NEW customs = LegalEntity {
+                name(customs) <- 'وكيل التخليص الجمركي';
+                NEW sv = Service {
+                    dataName(sv) <- 'جمارك وشحن';
+                    category(sv) <- rootCategory();
+                    costAllocationBase(sv) <- CostAllocationBase.amount;
+                    NEW b = Bill {
+                        type(b) <- GROUP MAX BillType t IF id(t) = 'bill';
+                        vendor(b) <- customs;
+                        dateTime(b) <- currentDateTime();
+                        Purchase.importShipmentSa(b) <- f;
+                        NEW l = BillLine {
+                            bill(l) <- b;
+                            item(l) <- sv; quantity(l) <- 1.0; price(l) <- 4000.00; untaxedAmount(l) <- 4000.00;
+                        }
+                        ready(b) <- TRUE;
+                    }
+                }
+            }
+        }
+        APPLY;
+        IF canceled() THEN throwException('Import: ' + applyMessage());
+    }
+    NEWSESSION { Purchase.distributeCosts(lastImportFile()); }
+    NEWSESSION {
+        newReceipt(bill(importGoodsLine()));
+        APPLY;
+        IF canceled() THEN throwException('Import receipt: ' + applyMessage());
+    }
+}
+
+// ---------- credit limit: a credit sale of 3000 to a customer with a limit of 2000 must be refused ----------
+
+creditRefused = DATA LOCAL NESTED BOOLEAN ();
+creditMessage = DATA LOCAL NESTED TEXT ();
+
+tryCreditSale () {
+    NEWSESSION NESTED (creditRefused, creditMessage) {
+        NEW i = Invoice {
+            type(i) <- deskInvoiceType();
+            dateTime(i) <- currentDateTime();
+            customer(i) <- GROUP MAX LegalEntity c IF name(c) = 'مقهى الضيافة';
+            location(i) <- demoWarehouse();
+            NEW il = InvoiceLine { invoice(il) <- i; Distribution.fillLine(il, packedProduct(), 120.0, 25.00); }
+            ready(i) <- TRUE;
+        }
+        APPLY;
+        creditRefused() <- TRUE IF canceled();
+        creditMessage() <- applyMessage();
+    }
+}
+
+// ---------- trial: after 14 days no new documents; activation key check ----------
+
+trialRefused = DATA LOCAL NESTED BOOLEAN ();
+trialMessage = DATA LOCAL NESTED TEXT ();
+savedInstallDate = DATA LOCAL NESTED DATE ();
+
+tryAfterTrial () {
+    savedInstallDate() <- Kaif.installDate();
+    NEWSESSION { Kaif.installDate() <- subtract(currentDate(), 20); APPLY; }
+    NEWSESSION NESTED (trialRefused, trialMessage) {
+        NEW p = IncomingPayment {
+            dateTime(p) <- currentDateTime();
+            type(p) <- Distribution.cashPaymentType();
+            partner(p) <- demoCustomer();
+            amount(p) <- 10.00;
+        }
+        APPLY;
+        trialRefused() <- TRUE IF canceled();
+        trialMessage() <- applyMessage();
+    }
+    NEWSESSION { Kaif.installDate() <- savedInstallDate(); APPLY; }
+}
+
+checksMore () {
+    runImport();
+    tryCreditSale();
+    tryAfterTrial();
+    Kaif.verifyLicense('KAIF1.bGljZW5zZWU9Q0kgdGVzdCAoZXhwaXJlZCk7ZXhwaXJlcz0yMDI2LTExLTEz.PJOlPKGvW2BRErTDzYaT3GPawFIRSQ6b283OGltTGCWhT5CxM62yDbMdRFulKgAvra9ouRcjObRQeoU4OJHN-QyMZU7OMt4YW2RHN_rgCLgg-ULO2LIXCU0KZfbx1Yo7Ap9KYJGS8FWhJtHR2jMKXOfw_dWhjV_IZSJhubJIML2Pv-wcy10ZNKYmJKwkNF3K3pynhRNNu3dG6d2mMYWgM6pC1Ha2A_nIKahmWid3JXqRaYwfIi9dKU_6IArR1Ev0g5zVB9vesPDNnNGDhf_QzvWgCD4ppdUwndRdrSMSJY5Ne4tuqhThhXg4eEQH70ugNuaVDxEbxEf4zkzqm_EBjw');
+    EXPORT JSON FROM
+        importNumber = number(lastImportFile()),
+        importGoods = Purchase.goodsAmount(lastImportFile()),
+        importCosts = Purchase.costsAmount(lastImportFile()),
+        importLineCosts = Purchase.importCostsSa(importGoodsLine()),
+        importLandedUnitCost = Purchase.landedUnitCost(importGoodsLine()),
+        importReceiptUnitCost = importReceiptPrice(),
+        importLooseTeaKg = onHand(demoWarehouse(), looseTea()),
+        creditRefused = creditRefused(),
+        creditMessage = creditMessage(),
+        trialRefused = trialRefused(),
+        trialMessage = trialMessage(),
+        trialRestored = TRUE IF Kaif.installDate() = savedInstallDate(),
+        expiredKeySignatureValid = Kaif.licenseCheckValid(),
+        expiredKeyLicensee = Kaif.licenseCheckLicensee(),
+        expiredKeyExpires = Kaif.licenseCheckExpires();
+} @@api;
+
+forgedKey () {
+    Kaif.verifyLicense('KAIF1.bGljZW5zZWU9Rm9yZ2VkO2V4cGlyZXM9bmV2ZXI.AAAA');
+    EXPORT JSON FROM forgedKeyValid = TRUE IF Kaif.licenseCheckValid();
+} @@api;
+
 costBeforeRecalc = DATA NUMERIC[14,2] ();
 
 scenarioRan = DATA BOOLEAN ();

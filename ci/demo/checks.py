@@ -50,5 +50,26 @@ near('Box 1 VAT = VAT of the sales - VAT of the credit notes', v.get('box1Vat'),
 near('Box 13 = output VAT - input VAT', v.get('box13VatDue'), (v.get('box1Vat') or 0) - (v.get('box12Vat') or 0))
 near('Box 1 VAT = 15% of (amount + adjustment)', v.get('box1Vat'), round(((v.get('box1Amount') or 0) + (v.get('box1Adjustment') or 0)) * 0.15, 2), 0.05)
 
+# ---- import file, credit limit, trial, activation key ----
+m = post('KaifTest.checksMore')
+print('more:', json.dumps(m, ensure_ascii=False))
+near('Import: goods', m.get('importGoods'), 20000)
+near('Import: customs and freight', m.get('importCosts'), 4000)
+near('Import: costs distributed to the goods line', m.get('importLineCosts'), 4000)
+near('Import: landed unit cost (20 + 4000/1000)', m.get('importLandedUnitCost'), 24)
+near('Import: unit cost of the receipt in the warehouse', m.get('importReceiptUnitCost'), 24)
+near('Import: loose tea in the warehouse (1980 + 1000)', m.get('importLooseTeaKg'), 2980, 0.001)
+def yes(name, cond, info=''):
+    print(('OK   ' if cond else 'FAIL ') + name + (f' ({info})' if info else ''))
+    if not cond:
+        problems.append(name)
+yes('Credit limit: a credit sale over the limit is refused', m.get('creditRefused') is True, m.get('creditMessage'))
+yes('Trial: no new documents after 14 days', m.get('trialRefused') is True and ('التجريبية' in (m.get('trialMessage') or '') or 'trial' in (m.get('trialMessage') or '').lower()), m.get('trialMessage'))
+yes('Trial: install date restored', m.get('trialRestored') is True)
+yes('Activation key: signature of a real key is valid', m.get('expiredKeySignatureValid') is True)
+yes('Activation key: licensee and expiry read from the key', m.get('expiredKeyLicensee') == 'CI test (expired)' and m.get('expiredKeyExpires') == '2026-11-13', f"{m.get('expiredKeyLicensee')} / {m.get('expiredKeyExpires')}")
+f = post('KaifTest.forgedKey')
+yes('Activation key: a forged key is refused', not f.get('forgedKeyValid'), json.dumps(f))
+
 print('\nPROBLEMS:' if problems else '\nALL CHECKS PASSED', *problems, sep='\n - ')
 sys.exit(1 if problems else 0)
