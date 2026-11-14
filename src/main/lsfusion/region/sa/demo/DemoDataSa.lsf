@@ -108,8 +108,11 @@ demoCustomer (STRING name, STRING city, STRING district, STRING phone, STRING va
 
 hasItemsDemo () = GROUP SUM 1 IF Product p IS Product;
 
+demoLoadError = DATA LOCAL TEXT ();
+
 loadDemoDataDo () {
-    NEWSESSION {
+    demoLoadError() <- NULL;
+    NEWSESSION NESTED (demoLoadError) {
         NEW u = Uom { name(u) <- 'حبة'; demoPiece() <- u; }
         NEW u = Uom { name(u) <- 'كرتون'; demoCarton() <- u; }
 
@@ -173,6 +176,7 @@ loadDemoDataDo () {
 
         done(Adjustment a) <- TRUE WHERE note(a) = 'Opening stock (demo)';
         APPLY;
+        IF canceled() THEN demoLoadError() <- applyMessage();
     }
 }
 
@@ -183,7 +187,8 @@ loadDemoData 'Load demo data' () {
     }
     ASK 'Load demo items, warehouses, distributors and customers?' DO {
         loadDemoDataDo();
-        IF hasItemsDemo() THEN MESSAGE 'Demo data loaded: 8 items, 3 packing materials with a bill of materials, 3 warehouses, 2 distributors, 6 customers';
+        IF demoLoadError() THEN MESSAGE 'Demo data was not loaded: ' + demoLoadError();
+        ELSE IF hasItemsDemo() THEN MESSAGE 'Demo data loaded: 8 items, 3 packing materials with a bill of materials, 3 warehouses, 2 distributors, 6 customers';
     }
 }
 

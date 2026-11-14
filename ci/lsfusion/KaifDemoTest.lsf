@@ -20,6 +20,7 @@ locationNames () = GROUP CONCAT name(Location l), ' | ' ORDER l;
 
 runScenario () {
     Kaif.loadDemoDataDo();
+    IF Kaif.demoLoadError() THEN throwException('Demo data: ' + Kaif.demoLoadError());
     IF NOT demoWarehouse() THEN throwException('Demo warehouse not found, locations: ' + (OVERRIDE locationNames(), '-'));
     IF NOT demoCustomer() THEN throwException('Demo customer not found');
     NEWSESSION {
