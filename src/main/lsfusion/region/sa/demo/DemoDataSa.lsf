@@ -11,6 +11,7 @@ NAMESPACE Kaif;
 // Administration -> Activation -> Load demo data (only on an empty system: no items yet).
 
 demoPiece = DATA LOCAL Uom ();
+demoRoot = DATA LOCAL Category ();
 demoCarton = DATA LOCAL Uom ();
 demoWarehouse = DATA LOCAL Location ();
 demoVan1 = DATA LOCAL Location ();
@@ -113,6 +114,10 @@ demoLoadError = DATA LOCAL TEXT ();
 loadDemoDataDo () {
     demoLoadError() <- NULL;
     NEWSESSION NESTED (demoLoadError) {
+        // the categories go under the single root category of the items
+        IF NOT rootCategory() THEN NEW r = Category { name(r) <- 'الأصناف'; }
+        demoRoot() <- rootCategory();
+
         NEW u = Uom { name(u) <- 'حبة'; demoPiece() <- u; }
         NEW u = Uom { name(u) <- 'كرتون'; demoCarton() <- u; }
 
@@ -124,6 +129,7 @@ loadDemoDataDo () {
         demoVan2() <- GROUP MAX Location l IF name(l) = 'سيارة التوزيع 2';
 
         NEW black = Category {
+            parent(black) <- demoRoot();
             name(black) <- 'شاي أسود';
             demoProduct(black, 'شاي الكيف الأصلي فاخر 100 كيس', '6281000000017', 24, 18.50, 480.0, 72.0);
             demoProduct(black, 'شاي الكيف الأصلي ناعم 450 جم', '6281000000024', 12, 27.00, 240.0, 36.0);
@@ -131,11 +137,13 @@ loadDemoDataDo () {
             demoProduct(black, 'شاي الكيف الأصلي سيلاني 1 كجم', '6281000000048', 6, 52.00, 120.0, 18.0);
         }
         NEW green = Category {
+            parent(green) <- demoRoot();
             name(green) <- 'شاي أخضر';
             demoProduct(green, 'شاي أخضر بالنعناع 50 كيس', '6281000000055', 24, 16.00, 240.0, 48.0);
             demoProduct(green, 'شاي أخضر ياسمين 100 جم', '6281000000062', 24, 21.00, 192.0, 24.0);
         }
         NEW herbs = Category {
+            parent(herbs) <- demoRoot();
             name(herbs) <- 'أعشاب';
             demoProduct(herbs, 'كرك بالهيل 20 ظرف', '6281000000079', 12, 24.00, 180.0, 36.0);
             demoProduct(herbs, 'بابونج طبيعي 25 كيس', '6281000000086', 24, 13.50, 144.0, 24.0);
@@ -144,7 +152,8 @@ loadDemoDataDo () {
         // packing: loose imported tea + bags + boxes -> packed tea (Manufacturing -> Bills of materials / Orders)
         NEW kg = Uom { name(kg) <- 'كجم';
             NEW raw = Category {
-                name(raw) <- 'مواد خام وتغليف';
+                parent(raw) <- demoRoot();
+            name(raw) <- 'مواد خام وتغليف';
                 demoMaterial(raw, 'شاي أسود كيني سائب (مستورد)', kg, 2000.0, 22.00);
                 demoMaterial(raw, 'أكياس شاي فلتر', demoPiece(), 200000.0, 0.02);
                 demoMaterial(raw, 'علبة كرتون مطبوعة 100 كيس', demoPiece(), 3000.0, 0.60);
