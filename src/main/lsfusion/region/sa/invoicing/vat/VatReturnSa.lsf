@@ -1,0 +1,250 @@
+MODULE VatReturnSa;
+
+REQUIRE Invoice, InvoiceTax, InvoiceCanceled, Bill, BillCanceled, CreditNote, Refund, Tax, TaxGroup, Company, DateUtils;
+
+NAMESPACE Invoicing;
+
+// VAT return of the Kingdom of Saudi Arabia (ZATCA): the amounts of the boxes of the return form
+// for a company and a period, calculated from the posted invoices and bills.
+//  - sales: customer invoices; adjustments: customer credit notes (returns)
+//  - purchases: vendor bills; adjustments: refunds to vendors
+//  - exports: sales to customers whose country is not Saudi Arabia
+//  - imports with VAT paid at customs / reverse charge: bills of the bill types marked as such
+// Only the taxes of the VAT tax group (id 'vat') are taken into account.
+
+// ---------- VAT category of the taxes ----------
+
+CLASS VatCategorySa 'VAT category' {
+    standard 'Standard rated (15%)',
+    zero 'Zero rated',
+    exempt 'Exempt',
+    outOfScope 'Out of scope'
+}
+
+dataVatCategorySa = DATA VatCategorySa (Tax);
+vatCategorySa (Tax t) = OVERRIDE dataVatCategorySa(t), (VatCategorySa.standard IF value(t) > 0), VatCategorySa.zero IF t IS Tax;
+nameVatCategorySa 'VAT category (ZATCA)' (Tax t) = staticCaption(vatCategorySa(t));
+
+isVatSa (Tax t) = id(taxGroup(t)) = 'vat';
+
+EXTEND FORM taxes PROPERTIES(t) nameVatCategorySa;
+
+// ---------- bill types of imports ----------
+
+importVatSa 'Imports: VAT paid at customs' = DATA BOOLEAN (BillType);
+reverseChargeSa 'Imports: VAT by reverse charge' = DATA BOOLEAN (BillType);
+
+EXTEND FORM billType PROPERTIES(o) importVatSa, reverseChargeSa;
+
+// ---------- foreign partners ----------
+
+foreignSa (Partner p) = country(p) AND NOT (alpha2(country(p)) = 'SA' OR id(country(p)) = 'SA' OR id(country(p)) = '682');
+
+// ---------- documents of the period ----------
+
+inPeriodSa (Invoice i, Company c, DATE df, DATE dt) = active(i) AND company(i) = c AND date(i) >= df AND date(i) <= dt;
+inPeriodSa (Bill b, Company c, DATE df, DATE dt) = active(b) AND company(b) = c AND date(b) >= df AND date(b) <= dt;
+
+netSa (Tax t, Invoice i) = amount(t, i) (-) taxAmount(t, i);
+netSa (Tax t, Bill b) = amount(t, b) (-) taxAmount(t, b);
+
+// sales by category (customer invoices, not refunds to vendors), domestic
+salesNet (VatCategorySa k, Company c, DATE df, DATE dt) =
+    GROUP SUM netSa(Tax t, Invoice i) IF inPeriodSa(i, c, df, dt) AND NOT isRefund(i) AND isVatSa(t)
+        AND vatCategorySa(t) = k AND NOT foreignSa(customer(i));
+salesVat (VatCategorySa k, Company c, DATE df, DATE dt) =
+    GROUP SUM taxAmount(Tax t, Invoice i) IF inPeriodSa(i, c, df, dt) AND NOT isRefund(i) AND isVatSa(t)
+        AND vatCategorySa(t) = k AND NOT foreignSa(customer(i));
+
+// customer credit notes by category, domestic (negative adjustments of sales)
+creditNotesNet (VatCategorySa k, Company c, DATE df, DATE dt) =
+    GROUP SUM netSa(Tax t, Bill b) IF inPeriodSa(b, c, df, dt) AND isCreditNote(b) AND isVatSa(t)
+        AND vatCategorySa(t) = k AND NOT foreignSa(vendor(b));
+creditNotesVat (VatCategorySa k, Company c, DATE df, DATE dt) =
+    GROUP SUM taxAmount(Tax t, Bill b) IF inPeriodSa(b, c, df, dt) AND isCreditNote(b) AND isVatSa(t)
+        AND vatCategorySa(t) = k AND NOT foreignSa(vendor(b));
+
+// exports (sales to foreign customers) and their credit notes
+exportsNet (Company c, DATE df, DATE dt) =
+    GROUP SUM netSa(Tax t, Invoice i) IF inPeriodSa(i, c, df, dt) AND NOT isRefund(i) AND isVatSa(t) AND foreignSa(customer(i));
+exportsCreditNotesNet (Company c, DATE df, DATE dt) =
+    GROUP SUM netSa(Tax t, Bill b) IF inPeriodSa(b, c, df, dt) AND isCreditNote(b) AND isVatSa(t) AND foreignSa(vendor(b));
+
+// domestic purchases by category (vendor bills, not credit notes, not imports)
+domesticBillSa (Bill b) = NOT isCreditNote(b) AND NOT importVatSa(type(b)) AND NOT reverseChargeSa(type(b));
+
+purchasesNet (VatCategorySa k, Company c, DATE df, DATE dt) =
+    GROUP SUM netSa(Tax t, Bill b) IF inPeriodSa(b, c, df, dt) AND domesticBillSa(b) AND isVatSa(t) AND vatCategorySa(t) = k;
+purchasesVat (VatCategorySa k, Company c, DATE df, DATE dt) =
+    GROUP SUM taxAmount(Tax t, Bill b) IF inPeriodSa(b, c, df, dt) AND domesticBillSa(b) AND isVatSa(t) AND vatCategorySa(t) = k;
+
+// refunds to vendors by category (negative adjustments of purchases)
+refundsNet (VatCategorySa k, Company c, DATE df, DATE dt) =
+    GROUP SUM netSa(Tax t, Invoice i) IF inPeriodSa(i, c, df, dt) AND isRefund(i) AND isVatSa(t) AND vatCategorySa(t) = k;
+refundsVat (VatCategorySa k, Company c, DATE df, DATE dt) =
+    GROUP SUM taxAmount(Tax t, Invoice i) IF inPeriodSa(i, c, df, dt) AND isRefund(i) AND isVatSa(t) AND vatCategorySa(t) = k;
+
+// imports with VAT paid at customs (bills of the customs: the base and the VAT paid)
+importsNet (Company c, DATE df, DATE dt) =
+    GROUP SUM netSa(Tax t, Bill b) IF inPeriodSa(b, c, df, dt) AND importVatSa(type(b)) AND NOT isCreditNote(b) AND isVatSa(t);
+importsVat (Company c, DATE df, DATE dt) =
+    GROUP SUM taxAmount(Tax t, Bill b) IF inPeriodSa(b, c, df, dt) AND importVatSa(type(b)) AND NOT isCreditNote(b) AND isVatSa(t);
+
+// imports by reverse charge (foreign services and goods without VAT): the VAT is self-assessed at 15 %
+reverseChargeNet (Company c, DATE df, DATE dt) =
+    GROUP SUM amount(Bill b) IF inPeriodSa(b, c, df, dt) AND reverseChargeSa(type(b)) AND NOT isCreditNote(b);
+reverseChargeVat (Company c, DATE df, DATE dt) = NUMERIC[14,2](reverseChargeNet(c, df, dt) * 0.15);
+
+// ---------- boxes of the return ----------
+
+CLASS VatReturnBox 'VAT return box' {
+    b1 '1. Standard rated sales (15%)',
+    b2 '2. Sales to citizens (private healthcare / education)',
+    b3 '3. Zero rated domestic sales',
+    b4 '4. Exports',
+    b5 '5. Exempt sales',
+    b6 '6. Total sales',
+    b7 '7. Standard rated domestic purchases (15%)',
+    b8 '8. Imports subject to VAT paid at customs',
+    b9 '9. Imports subject to VAT by reverse charge',
+    b10 '10. Zero rated purchases',
+    b11 '11. Exempt purchases',
+    b12 '12. Total purchases',
+    b13 '13. Total VAT due for the current period',
+    b14 '14. Corrections from previous periods',
+    b15 '15. VAT credit carried forward from previous periods',
+    b16 '16. Net VAT due (or claimed)'
+}
+
+order (VatReturnBox b) = CASE
+    WHEN b = VatReturnBox.b1 THEN 1 WHEN b = VatReturnBox.b2 THEN 2 WHEN b = VatReturnBox.b3 THEN 3
+    WHEN b = VatReturnBox.b4 THEN 4 WHEN b = VatReturnBox.b5 THEN 5 WHEN b = VatReturnBox.b6 THEN 6
+    WHEN b = VatReturnBox.b7 THEN 7 WHEN b = VatReturnBox.b8 THEN 8 WHEN b = VatReturnBox.b9 THEN 9
+    WHEN b = VatReturnBox.b10 THEN 10 WHEN b = VatReturnBox.b11 THEN 11 WHEN b = VatReturnBox.b12 THEN 12
+    WHEN b = VatReturnBox.b13 THEN 13 WHEN b = VatReturnBox.b14 THEN 14 WHEN b = VatReturnBox.b15 THEN 15
+    WHEN b = VatReturnBox.b16 THEN 16;
+captionBox 'Box' (VatReturnBox b) = staticCaption(b) CHARWIDTH 40;
+
+// entered by the accountant in the form
+correctionsVat 'Corrections from previous periods' = DATA LOCAL NUMERIC[14,2] ();
+creditCarriedVat 'VAT credit carried forward' = DATA LOCAL NUMERIC[14,2] ();
+
+amountBox 'Amount (SAR)' (VatReturnBox b, Company c, DATE df, DATE dt) = CASE
+    WHEN b = VatReturnBox.b1 THEN salesNet(VatCategorySa.standard, c, df, dt)
+    WHEN b = VatReturnBox.b3 THEN salesNet(VatCategorySa.zero, c, df, dt)
+    WHEN b = VatReturnBox.b4 THEN exportsNet(c, df, dt)
+    WHEN b = VatReturnBox.b5 THEN salesNet(VatCategorySa.exempt, c, df, dt)
+    WHEN b = VatReturnBox.b6 THEN (salesNet(VatCategorySa.standard, c, df, dt) (+) salesNet(VatCategorySa.zero, c, df, dt)
+                                  (+) exportsNet(c, df, dt) (+) salesNet(VatCategorySa.exempt, c, df, dt))
+    WHEN b = VatReturnBox.b7 THEN purchasesNet(VatCategorySa.standard, c, df, dt)
+    WHEN b = VatReturnBox.b8 THEN importsNet(c, df, dt)
+    WHEN b = VatReturnBox.b9 THEN reverseChargeNet(c, df, dt)
+    WHEN b = VatReturnBox.b10 THEN purchasesNet(VatCategorySa.zero, c, df, dt)
+    WHEN b = VatReturnBox.b11 THEN purchasesNet(VatCategorySa.exempt, c, df, dt)
+    WHEN b = VatReturnBox.b12 THEN (purchasesNet(VatCategorySa.standard, c, df, dt) (+) importsNet(c, df, dt)
+                                   (+) reverseChargeNet(c, df, dt) (+) purchasesNet(VatCategorySa.zero, c, df, dt)
+                                   (+) purchasesNet(VatCategorySa.exempt, c, df, dt));
+
+adjustmentBox 'Adjustment (SAR)' (VatReturnBox b, Company c, DATE df, DATE dt) = CASE
+    WHEN b = VatReturnBox.b1 THEN -creditNotesNet(VatCategorySa.standard, c, df, dt)
+    WHEN b = VatReturnBox.b3 THEN -creditNotesNet(VatCategorySa.zero, c, df, dt)
+    WHEN b = VatReturnBox.b4 THEN -exportsCreditNotesNet(c, df, dt)
+    WHEN b = VatReturnBox.b5 THEN -creditNotesNet(VatCategorySa.exempt, c, df, dt)
+    WHEN b = VatReturnBox.b6 THEN -(creditNotesNet(VatCategorySa.standard, c, df, dt) (+) creditNotesNet(VatCategorySa.zero, c, df, dt)
+                                   (+) exportsCreditNotesNet(c, df, dt) (+) creditNotesNet(VatCategorySa.exempt, c, df, dt))
+    WHEN b = VatReturnBox.b7 THEN -refundsNet(VatCategorySa.standard, c, df, dt)
+    WHEN b = VatReturnBox.b10 THEN -refundsNet(VatCategorySa.zero, c, df, dt)
+    WHEN b = VatReturnBox.b11 THEN -refundsNet(VatCategorySa.exempt, c, df, dt)
+    WHEN b = VatReturnBox.b12 THEN -(refundsNet(VatCategorySa.standard, c, df, dt) (+) refundsNet(VatCategorySa.zero, c, df, dt)
+                                    (+) refundsNet(VatCategorySa.exempt, c, df, dt));
+
+outputVat (Company c, DATE df, DATE dt) =
+    salesVat(VatCategorySa.standard, c, df, dt) (-) creditNotesVat(VatCategorySa.standard, c, df, dt);
+inputVat (Company c, DATE df, DATE dt) =
+    purchasesVat(VatCategorySa.standard, c, df, dt) (-) refundsVat(VatCategorySa.standard, c, df, dt)
+    (+) importsVat(c, df, dt) (+) reverseChargeVat(c, df, dt);
+// the VAT self-assessed by reverse charge is due as well as deductible
+totalVatDue (Company c, DATE df, DATE dt) = outputVat(c, df, dt) (+) reverseChargeVat(c, df, dt) (-) inputVat(c, df, dt);
+
+vatBox 'VAT (SAR)' (VatReturnBox b, Company c, DATE df, DATE dt) = CASE
+    WHEN b = VatReturnBox.b1 THEN outputVat(c, df, dt)
+    WHEN b = VatReturnBox.b6 THEN outputVat(c, df, dt)
+    WHEN b = VatReturnBox.b7 THEN purchasesVat(VatCategorySa.standard, c, df, dt) (-) refundsVat(VatCategorySa.standard, c, df, dt)
+    WHEN b = VatReturnBox.b8 THEN importsVat(c, df, dt)
+    WHEN b = VatReturnBox.b9 THEN reverseChargeVat(c, df, dt)
+    WHEN b = VatReturnBox.b12 THEN inputVat(c, df, dt)
+    WHEN b = VatReturnBox.b13 THEN totalVatDue(c, df, dt)
+    WHEN b = VatReturnBox.b14 THEN correctionsVat()
+    WHEN b = VatReturnBox.b15 THEN creditCarriedVat()
+    WHEN b = VatReturnBox.b16 THEN totalVatDue(c, df, dt) (+) correctionsVat() (-) creditCarriedVat();
+
+isTotalBox (VatReturnBox b) = b = VatReturnBox.b6 OR b = VatReturnBox.b12 OR b = VatReturnBox.b13 OR b = VatReturnBox.b16;
+backgroundBox (VatReturnBox b) = RGB(231, 243, 228) IF isTotalBox(b);
+
+// documents of the period with their VAT, for checking the return
+netSa 'Net (SAR)' (Invoice i) = GROUP SUM netSa(Tax t, i) IF isVatSa(t);
+vatSa 'VAT (SAR)' (Invoice i) = GROUP SUM taxAmount(Tax t, i) IF isVatSa(t);
+netSa 'Net (SAR)' (Bill b) = GROUP SUM netSa(Tax t, b) IF isVatSa(t);
+vatSa 'VAT (SAR)' (Bill b) = GROUP SUM taxAmount(Tax t, b) IF isVatSa(t);
+
+// ---------- form ----------
+
+FORM vatReturnSa 'VAT return (ZATCA)'
+    OBJECTS c = Company PANEL
+    PROPERTIES(c) 'Company' = name SELECTOR
+
+    OBJECTS p = INTERVAL[DATE] PANEL
+    PROPERTIES period 'Period' = VALUE(p)
+    PROPERTIES() correctionsVat, creditCarriedVat
+
+    // default period: the previous month
+    EVENTS ON INIT {
+        ACTIVATE vatReturnSa.p = interval(firstDayOfMonth(subtract(firstDayOfMonth(currentDate()), 1)),
+                                          subtract(firstDayOfMonth(currentDate()), 1));
+    }
+
+    OBJECTS b = VatReturnBox
+    PROPERTIES(b) READONLY captionBox BACKGROUND backgroundBox(b)
+    PROPERTIES READONLY amountBox(b, c, from(p), to(p)) BACKGROUND backgroundBox(b),
+                        adjustmentBox(b, c, from(p), to(p)) BACKGROUND backgroundBox(b),
+                        vatBox(b, c, from(p), to(p)) BACKGROUND backgroundBox(b)
+    ORDERS order(b)
+
+    OBJECTS i = Invoice
+    PROPERTIES(i) READONLY date, number, nameType, nameCustomer, netSa, vatSa, amount
+    PROPERTIES(i) NEWSESSION EDIT
+    FILTERS inPeriodSa(i, c, from(p), to(p))
+
+    OBJECTS bl = Bill
+    PROPERTIES(bl) READONLY date, number, nameType, nameVendor, netSa, vatSa, amount
+    PROPERTIES(bl) NEWSESSION EDIT
+    FILTERS inPeriodSa(bl, c, from(p), to(p))
+;
+
+DESIGN vatReturnSa {
+    OBJECTS {
+        NEW header {
+            horizontal = TRUE;
+            alignment = STRETCH;
+            MOVE PROPERTY(name(c));
+            MOVE PROPERTY(period);
+            MOVE PROPERTY(correctionsVat());
+            MOVE PROPERTY(creditCarriedVat());
+        }
+        NEW tabs {
+            tabbed = TRUE;
+            fill = 1;
+            MOVE BOX(b) { caption = 'VAT return'; }
+            MOVE BOX(i) { caption = 'Invoices'; }
+            MOVE BOX(bl) { caption = 'Bills'; }
+        }
+    }
+}
+
+NAVIGATOR {
+    invoicing {
+        reporting {
+            NEW vatReturnSa;
+        }
+    }
+}

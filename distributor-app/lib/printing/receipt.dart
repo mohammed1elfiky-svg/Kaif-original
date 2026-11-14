@@ -3,6 +3,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
 import '../core/money.dart';
+import '../core/tafqit.dart';
 import '../core/zatca.dart';
 import '../data/models.dart';
 
@@ -119,6 +120,7 @@ class Receipt extends StatelessWidget {
               if (doc.paid > 0) row('مردود نقداً للعميل', '${formatMoney(doc.paid)} SAR', style: bold),
               if (doc.paid < t.total) row('مخصوم من رصيد العميل', '${formatMoney(t.total - doc.paid)} SAR', style: bold),
             ],
+            Text(tafqitSar(t.total), style: bold, textAlign: TextAlign.right),
             dash(),
             if (company.vat.isNotEmpty)
               Center(child: QrImageView(data: qr, size: small ? 110 : 140, padding: EdgeInsets.zero)),
@@ -156,6 +158,7 @@ class Receipt extends StatelessWidget {
           ] else ...[
             dash(),
             row('المبلغ المستلم', '${formatMoney(doc.paid)} SAR', style: bold.copyWith(fontSize: base.fontSize! + 2)),
+            Text(tafqitSar(doc.paid), style: bold, textAlign: TextAlign.right),
             row('طريقة الدفع', doc.method == PayMethod.cash ? 'نقداً' : 'تحويل / بطاقة'),
             if (doc.invoiceNumber.isNotEmpty) row('عن الفاتورة', doc.invoiceNumber),
             if (doc.note.isNotEmpty) row('ملاحظة', doc.note),

@@ -1,6 +1,6 @@
 MODULE InvoicePrintSa;
 
-REQUIRE InvoicePrint, InvoicePrintDebt, ZatcaQR;
+REQUIRE InvoicePrint, InvoicePrintDebt, ZatcaQR, UtilsSa;
 
 NAMESPACE Invoicing;
 
@@ -9,9 +9,10 @@ crNumberCompanySa (Invoice i) = crNumberSa(company(i));
 nationalAddressCompanySa (Invoice i) = nationalAddressSa(company(i));
 nationalAddressCustomerSa (Invoice i) = nationalAddressSa(customer(i));
 crNumberCustomerSa (Invoice i) = crNumberSa(customer(i));
+amountWordsSa 'Amount in words' (Invoice i) = tafqitSar(amount(i));
 
 EXTEND FORM printInvoice
     PROPERTIES(o) sellerVatNumberSa, buyerVatNumberSa, crNumberCompanySa, crNumberCustomerSa,
                   nationalAddressCompanySa, nationalAddressCustomerSa,
-                  isSimplifiedSa, zatcaQR
+                  isSimplifiedSa, zatcaQR, amountWordsSa
 ;

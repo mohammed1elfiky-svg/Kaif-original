@@ -8,5 +8,5 @@ REQUIRE MyCompany,
         PartnerSa,
         TaxInitialSa,
         ZatcaQR,
-        InvoicePrintSa, InvoicePrintInitialSa,
+        InvoicePrintSa, InvoicePrintInitialSa, VatReturnSa, PosReceiptSa,
         Distribution;

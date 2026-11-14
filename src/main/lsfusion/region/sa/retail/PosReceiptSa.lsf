@@ -1,0 +1,37 @@
+MODULE PosReceiptSa;
+
+REQUIRE PosDashboardPayment, SessionInvoice, InvoicePrintSa, Pos;
+
+NAMESPACE Retail;
+
+// Simplified tax invoice with the ZATCA QR code printed at the cash register after each payment
+// (instead of a fiscal cash register, which is not used in Saudi Arabia). The template is chosen
+// for each cash register, usually "فاتورة حرارية 80 مم" (TaxInvoiceReceiptSa.jrxml).
+
+receiptTemplateSa = DATA InvoiceTemplate (Pos);
+nameReceiptTemplateSa 'Receipt template (printed after payment)' (Pos p) = name(receiptTemplateSa(p));
+receiptPreviewSa 'Show the receipt before printing' = DATA BOOLEAN (Pos);
+
+EXTEND FORM pos
+    PROPERTIES(p) nameReceiptTemplateSa, receiptPreviewSa
+;
+
+printReceiptSa 'Print receipt' (Invoice i) {
+    FOR InvoiceTemplate tm = receiptTemplateSa(pos(session(i))) DO {
+        invoiceTemplate() <- tm;
+        IF receiptPreviewSa(pos(session(i))) THEN
+            PRINT Invoicing.printInvoice OBJECTS o = i;
+        ELSE
+            PRINT Invoicing.printInvoice OBJECTS o = i NOPREVIEW;
+    }
+}
+
+afterPosPayment(Invoice i) + {
+    printReceiptSa(i);
+}
+
+// default: the thermal receipt template for the cash registers without a template
+loadDefaultData () + {
+    receiptTemplateSa(Pos p) <- (GROUP MAX InvoiceTemplate tm IF template(tm) = 'TaxInvoiceReceiptSa.jrxml')
+        WHERE p IS Pos AND NOT receiptTemplateSa(p);
+}

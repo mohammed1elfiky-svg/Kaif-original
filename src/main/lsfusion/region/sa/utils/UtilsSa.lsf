@@ -1,0 +1,9 @@
+MODULE UtilsSa;
+
+REQUIRE Utils;
+
+NAMESPACE Utils;
+
+// Arabic amount in words for printed documents (SQL function in resources/sql/region/sa/tafqit.sql):
+// tafqitSar(1150.50) = 'فقط ألف ومائة وخمسون ريال سعودي وخمسون هللة لا غير'
+tafqitSar (NUMERIC n) = FORMULA TEXT 'tafqit_sar($1)';
