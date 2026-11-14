@@ -51,7 +51,7 @@ jobs:
         run: |
           jar=$(ls target/*.jar | grep -v -- '-sources' | head -1)
           java -Ddb.server=localhost -Ddb.user=postgres -Ddb.password=ci-password -Ddb.name=kaif \
-               -Dlogics.topModule=KaifDemoTest -Duser.setLanguage=ar -Duser.setCountry=SA -Duser.setTimezone=Asia/Riyadh \
+               -Dlogics.topModule=KaifDemoTest -Dsettings.batchScriptErrors=true -Duser.setLanguage=ar -Duser.setCountry=SA -Duser.setTimezone=Asia/Riyadh \
                -cp "ci:$jar:$(cat cp.txt)" lsfusion.server.logics.BusinessLogicsBootstrap > server.log 2>&1 &
           for i in $(seq 1 120); do
             if grep -q "Server has successfully started" server.log; then break; fi

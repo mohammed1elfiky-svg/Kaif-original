@@ -84,64 +84,6 @@ runPacking () {
     }
 }
 
-looseTea () = GROUP MAX Product p IF dataName(p) = 'شاي أسود كيني سائب (مستورد)';
-looseTeaPrice () = GROUP MAX price(InCostLedger il) IF product(il) = looseTea();
-consumedLedgers () = GROUP SUM 1 IF manufacturingOrder(line(ConsumedOutCostLedger l)) = lastPacking();
-consumedAmount () = GROUP SUM amount(ConsumedOutCostLedger l) IF manufacturingOrder(line(l)) = lastPacking();
-costBeforeRecalc = DATA NUMERIC[14,2] ();
-
-scenarioRan = DATA BOOLEAN ();
-
-runDemo () {
-    IF NOT scenarioRan() THEN {
-        runScenario();
-        runPacking();
-        setupDistributor();
-        runPayroll();
-        NEWSESSION { costBeforeRecalc() <- totalCost(lastPacking()); APPLY; }
-        Inventory.recalculateCost(subtract(currentDate(), 1));
-        NEWSESSION { scenarioRan() <- TRUE; APPLY; }
-    }
-    EXPORT JSON FROM
-        items = (GROUP SUM 1 IF Product p IS Product),
-        customers = (GROUP SUM 1 IF isCustomer(LegalEntity c)),
-        invoice = number(lastInvoice()),
-        invoiceAmount = amount(lastInvoice()),
-        invoicePaid = paid(lastInvoice()),
-        zatcaQR = zatcaQR(lastInvoice()),
-        amountWords = amountWordsSa(lastInvoice()),
-        creditNote = number(lastReturn()),
-        creditNoteAmount = amount[Bill](lastReturn()),
-        warehouseOnHand = (GROUP SUM onHand(demoWarehouse(), Product p)),
-        packingOrder = number(lastPacking()),
-        packingTotalCost = totalCost(lastPacking()),
-        packingCostBeforeRecalc = costBeforeRecalc(),
-        looseTeaPrice = looseTeaPrice(),
-        consumedLedgers = consumedLedgers(),
-        consumedAmount = consumedAmount(),
-        packingUnitCost = NUMERIC[14,4](totalCost(lastPacking()) / 100.0),
-        packingExpectedUnitCost = 7.00,
-        hasLogo = TRUE IF logicsLogo(),
-        appCaption = logicsCaption(),
-        appDisplayName = displayName(),
-        looseTeaLeftKg = onHand(demoWarehouse(), (GROUP MAX Product p IF dataName(p) = 'شاي أسود كيني سائب (مستورد)'));
-} @@api;
-
-invoicePdf () {
-    invoiceTemplate() <- GROUP MAX InvoiceTemplate tm IF template(tm) = 'TaxInvoiceSa.jrxml';
-    PRINT Invoicing.printInvoice OBJECTS o = lastInvoice() PDF TO exportFile;
-} @@api;
-
-receiptPdf () {
-    invoiceTemplate() <- GROUP MAX InvoiceTemplate tm IF template(tm) = 'TaxInvoiceReceiptSa.jrxml';
-    PRINT Invoicing.printInvoice OBJECTS o = lastInvoice() PDF TO exportFile;
-} @@api;
-
-creditNotePdf () {
-    billTemplate() <- GROUP MAX BillTemplate tm IF template(tm) = 'CreditNoteSa.jrxml';
-    PRINT Invoicing.printBill OBJECTS o = lastReturn() PDF TO exportFile;
-} @@api;
-
 // ---------- distributor: login d01 / test123 for the first distributor (the app scenario in ci/demo/distributor.py) ----------
 
 demoDistributor () = GROUP MAX Employee e IF Distribution.documentPrefix(e) = 'D01';
@@ -257,6 +199,64 @@ vatCheck () {
         salesInvoices = (GROUP SUM 1 IF inPeriodSa(Invoice i, defaultCompany(), df(), dt())),
         salesVatSum = (GROUP SUM vatSa(Invoice i) IF inPeriodSa(i, defaultCompany(), df(), dt()) AND NOT isRefund(i)),
         creditNotesVatSum = (GROUP SUM vatSa(Bill b) IF inPeriodSa(b, defaultCompany(), df(), dt()) AND isCreditNote(b));
+} @@api;
+
+looseTea () = GROUP MAX Product p IF dataName(p) = 'شاي أسود كيني سائب (مستورد)';
+looseTeaPrice () = GROUP MAX price(InCostLedger il) IF product(il) = looseTea();
+consumedLedgers () = GROUP SUM 1 IF manufacturingOrder(line(ConsumedOutCostLedger l)) = lastPacking();
+consumedAmount () = GROUP SUM amount(ConsumedOutCostLedger l) IF manufacturingOrder(line(l)) = lastPacking();
+costBeforeRecalc = DATA NUMERIC[14,2] ();
+
+scenarioRan = DATA BOOLEAN ();
+
+runDemo () {
+    IF NOT scenarioRan() THEN {
+        runScenario();
+        runPacking();
+        setupDistributor();
+        runPayroll();
+        NEWSESSION { costBeforeRecalc() <- totalCost(lastPacking()); APPLY; }
+        Inventory.recalculateCost(subtract(currentDate(), 1));
+        NEWSESSION { scenarioRan() <- TRUE; APPLY; }
+    }
+    EXPORT JSON FROM
+        items = (GROUP SUM 1 IF Product p IS Product),
+        customers = (GROUP SUM 1 IF isCustomer(LegalEntity c)),
+        invoice = number(lastInvoice()),
+        invoiceAmount = amount(lastInvoice()),
+        invoicePaid = paid(lastInvoice()),
+        zatcaQR = zatcaQR(lastInvoice()),
+        amountWords = amountWordsSa(lastInvoice()),
+        creditNote = number(lastReturn()),
+        creditNoteAmount = amount[Bill](lastReturn()),
+        warehouseOnHand = (GROUP SUM onHand(demoWarehouse(), Product p)),
+        packingOrder = number(lastPacking()),
+        packingTotalCost = totalCost(lastPacking()),
+        packingCostBeforeRecalc = costBeforeRecalc(),
+        looseTeaPrice = looseTeaPrice(),
+        consumedLedgers = consumedLedgers(),
+        consumedAmount = consumedAmount(),
+        packingUnitCost = NUMERIC[14,4](totalCost(lastPacking()) / 100.0),
+        packingExpectedUnitCost = 7.00,
+        hasLogo = TRUE IF logicsLogo(),
+        appCaption = logicsCaption(),
+        appDisplayName = displayName(),
+        looseTeaLeftKg = onHand(demoWarehouse(), (GROUP MAX Product p IF dataName(p) = 'شاي أسود كيني سائب (مستورد)'));
+} @@api;
+
+invoicePdf () {
+    invoiceTemplate() <- GROUP MAX InvoiceTemplate tm IF template(tm) = 'TaxInvoiceSa.jrxml';
+    PRINT Invoicing.printInvoice OBJECTS o = lastInvoice() PDF TO exportFile;
+} @@api;
+
+receiptPdf () {
+    invoiceTemplate() <- GROUP MAX InvoiceTemplate tm IF template(tm) = 'TaxInvoiceReceiptSa.jrxml';
+    PRINT Invoicing.printInvoice OBJECTS o = lastInvoice() PDF TO exportFile;
+} @@api;
+
+creditNotePdf () {
+    billTemplate() <- GROUP MAX BillTemplate tm IF template(tm) = 'CreditNoteSa.jrxml';
+    PRINT Invoicing.printBill OBJECTS o = lastReturn() PDF TO exportFile;
 } @@api;
 
 // the next web client start shows this form (the screenshots)
