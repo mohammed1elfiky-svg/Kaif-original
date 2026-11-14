@@ -16,8 +16,12 @@ deskInvoiceType () = GROUP MAX InvoiceType t IF numerator(t) AND billType(t) AND
 
 firstProducts (Product p) = PARTITION SUM 1 IF p IS Product ORDER p;
 
+locationNames () = GROUP CONCAT name(Location l), ' | ' ORDER l;
+
 runScenario () {
     Kaif.loadDemoDataDo();
+    IF NOT demoWarehouse() THEN throwException('Demo warehouse not found, locations: ' + (OVERRIDE locationNames(), '-'));
+    IF NOT demoCustomer() THEN throwException('Demo customer not found');
     NEWSESSION {
         NEW i = Invoice {
             type(i) <- deskInvoiceType();
@@ -74,7 +78,8 @@ runPacking () {
             done(o) <- TRUE;
         }
         APPLY;
-        IF canceled() THEN throwException('Packing: ' + applyMessage());
+        IF canceled() THEN throwException('Packing: ' + applyMessage() + ' / warehouse: ' + (OVERRIDE name(demoWarehouse()), '-')
+            + ' / order location: ' + (OVERRIDE name(productsLocation(lastPacking())), '-'));
     }
 }
 
