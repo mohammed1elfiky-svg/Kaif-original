@@ -34,7 +34,9 @@ class Receipt extends StatelessWidget {
     final base = TextStyle(fontSize: small ? 8 : 9.5, color: Colors.black, height: 1.3);
     final bold = base.copyWith(fontWeight: FontWeight.bold);
     final local = doc.date.toUtc().add(const Duration(hours: 3)); // Saudi time
-    final isInvoice = doc.kind == DocKind.invoice;
+    final kind = doc.kind;
+    final hasLines = doc.hasLines;
+    final simplified = doc.customerVat.isEmpty;
     final t = doc.totals;
 
     Widget row(String label, String value, {TextStyle? style}) => Padding(
@@ -65,21 +67,35 @@ class Receipt extends StatelessWidget {
             Text(company.phone, textAlign: TextAlign.center, style: base, textDirection: TextDirection.ltr),
           dash(),
           Text(
-            isInvoice ? (doc.customerVat.isEmpty ? 'فاتورة ضريبية مبسطة' : 'فاتورة ضريبية') : 'سند قبض',
+            switch (kind) {
+              DocKind.invoice => simplified ? 'فاتورة ضريبية مبسطة' : 'فاتورة ضريبية',
+              DocKind.ret => simplified ? 'إشعار دائن لفاتورة مبسطة' : 'إشعار دائن',
+              DocKind.closing => 'تقرير إقفال اليوم',
+              _ => 'سند قبض',
+            },
             textAlign: TextAlign.center,
             style: bold.copyWith(fontSize: base.fontSize! + 3),
           ),
           Text(
-            isInvoice ? (doc.customerVat.isEmpty ? 'Simplified Tax Invoice' : 'Tax Invoice') : 'Receipt Voucher',
+            switch (kind) {
+              DocKind.invoice => simplified ? 'Simplified Tax Invoice' : 'Tax Invoice',
+              DocKind.ret => 'Credit Note',
+              DocKind.closing => 'End of Day Report',
+              _ => 'Receipt Voucher',
+            },
             textAlign: TextAlign.center,
             style: base,
           ),
           const SizedBox(height: 4),
           row('الرقم', doc.number, style: bold),
           row('التاريخ', _date.format(local)),
-          row('العميل', doc.customerName, style: bold),
+          row(kind == DocKind.closing ? 'الموزع' : 'العميل', doc.customerName, style: bold),
           if (doc.customerVat.isNotEmpty) row('الرقم الضريبي للعميل', doc.customerVat),
-          if (isInvoice) ...[
+          if (kind == DocKind.ret) ...[
+            if (doc.invoiceNumber.isNotEmpty) row('الفاتورة الأصلية', doc.invoiceNumber),
+            row('سبب الإرجاع', doc.note),
+          ],
+          if (hasLines) ...[
             dash(),
             row('الصنف / الكمية × السعر', 'الإجمالي', style: bold),
             dash(),
@@ -95,11 +111,48 @@ class Receipt extends StatelessWidget {
             row('الإجمالي غير شامل الضريبة', '${formatMoney(t.net)} SAR'),
             row('ضريبة القيمة المضافة', '${formatMoney(t.tax)} SAR'),
             row('الإجمالي شامل الضريبة', '${formatMoney(t.total)} SAR', style: bold.copyWith(fontSize: base.fontSize! + 2)),
-            if (doc.paid > 0) row('المدفوع (${doc.method == PayMethod.cash ? 'نقداً' : 'تحويل'})', '${formatMoney(doc.paid)} SAR'),
-            if (doc.credit > 0) row('المتبقي - آجل', '${formatMoney(doc.credit)} SAR', style: bold),
+            if (kind == DocKind.invoice) ...[
+              if (doc.paid > 0)
+                row('المدفوع (${doc.method == PayMethod.cash ? 'نقداً' : 'تحويل'})', '${formatMoney(doc.paid)} SAR'),
+              if (doc.credit > 0) row('المتبقي - آجل', '${formatMoney(doc.credit)} SAR', style: bold),
+            ] else ...[
+              if (doc.paid > 0) row('مردود نقداً للعميل', '${formatMoney(doc.paid)} SAR', style: bold),
+              if (doc.paid < t.total) row('مخصوم من رصيد العميل', '${formatMoney(t.total - doc.paid)} SAR', style: bold),
+            ],
             dash(),
             if (company.vat.isNotEmpty)
               Center(child: QrImageView(data: qr, size: small ? 110 : 140, padding: EdgeInsets.zero)),
+          ] else if (kind == DocKind.closing) ...[
+            dash(),
+            row('عدد الفواتير / التحصيل / المرتجع',
+                '${doc.summary['invoices'] ?? 0} / ${doc.summary['payments'] ?? 0} / ${doc.summary['returnsCount'] ?? 0}'),
+            row('عدد الزيارات', '${doc.summary['visits'] ?? 0}'),
+            row('المبيعات', formatMoney(doc.summary['sales'] ?? 0)),
+            row('منها آجل', formatMoney(doc.summary['credit'] ?? 0)),
+            row('المرتجعات', formatMoney(doc.summary['returns'] ?? 0)),
+            row('مبيعات نقدية', formatMoney(doc.summary['cashSales'] ?? 0)),
+            row('تحصيل نقدي', formatMoney(doc.summary['cashCollections'] ?? 0)),
+            row('مردود نقداً', formatMoney(doc.summary['cashRefunds'] ?? 0)),
+            row('تحويل / بطاقة', formatMoney(doc.summary['bank'] ?? 0)),
+            dash(),
+            row('النقد المتوقع', '${formatMoney(doc.summary['cashExpected'] ?? 0)} SAR', style: bold),
+            row('النقد المسلَّم', '${formatMoney(doc.summary['cashHanded'] ?? 0)} SAR', style: bold),
+            if ((doc.summary['cashHanded'] ?? 0) != (doc.summary['cashExpected'] ?? 0))
+              row('الفرق', formatMoney((doc.summary['cashHanded'] ?? 0) - (doc.summary['cashExpected'] ?? 0)),
+                  style: bold),
+            dash(),
+            row('الصنف / المتوقع - المعدود', 'الفرق', style: bold),
+            for (final l in doc.closingLines) ...[
+              Text(l.itemName, style: base),
+              row('${formatQty(l.expected)} - ${formatQty(l.counted)} ${l.uom}',
+                  l.difference == 0 ? '✓' : formatQty(l.difference),
+                  style: l.difference == 0 ? base : bold),
+            ],
+            if (doc.note.isNotEmpty) ...[dash(), row('ملاحظة', doc.note)],
+            const SizedBox(height: 16),
+            row('توقيع الموزع', '..................'),
+            const SizedBox(height: 12),
+            row('توقيع المستلم', '..................'),
           ] else ...[
             dash(),
             row('المبلغ المستلم', '${formatMoney(doc.paid)} SAR', style: bold.copyWith(fontSize: base.fontSize! + 2)),
@@ -110,7 +163,7 @@ class Receipt extends StatelessWidget {
             row('توقيع المستلم', '..................'),
           ],
           const SizedBox(height: 6),
-          Text('شكراً لتعاملكم معنا', textAlign: TextAlign.center, style: bold),
+          if (kind != DocKind.closing) Text('شكراً لتعاملكم معنا', textAlign: TextAlign.center, style: bold),
           const SizedBox(height: 12),
         ]),
       ),

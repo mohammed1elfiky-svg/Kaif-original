@@ -24,6 +24,8 @@ class Customer {
   final int? maxOverdueDays; // null = no check
   final int debt; // halalas, as of download
   final int overdueDays; // oldest overdue debt, as of download
+  final List<int> visitDays; // ISO weekdays: Monday = 1 ... Sunday = 7
+  final int? visitOrder;
 
   Customer({
     required this.id,
@@ -39,7 +41,11 @@ class Customer {
     this.maxOverdueDays,
     this.debt = 0,
     this.overdueDays = 0,
+    this.visitDays = const [],
+    this.visitOrder,
   });
+
+  bool visitOn(DateTime day) => visitDays.contains(day.weekday);
 
   bool get hasVat => vat.isNotEmpty;
 
@@ -57,6 +63,8 @@ class Customer {
         maxOverdueDays: (j['maxOverdueDays'] as num?)?.toInt(),
         debt: toHalalas(j['debt']),
         overdueDays: (j['overdueDays'] as num?)?.toInt() ?? 0,
+        visitDays: _s(j['visitDays']).split(',').map((e) => int.tryParse(e.trim())).whereType<int>().toList(),
+        visitOrder: (j['visitOrder'] as num?)?.toInt(),
       );
 }
 
@@ -121,7 +129,7 @@ class ServerData {
 
 /// Documents created on the device.
 
-enum DocKind { invoice, payment }
+enum DocKind { invoice, payment, ret, visit, closing }
 
 enum DocStatus { pending, sent, error }
 
@@ -156,7 +164,11 @@ class Doc {
   final int paid; // invoice: paid immediately; payment: amount
   final PayMethod method;
   final String invoiceNumber; // payment: invoice it pays (optional)
-  final String note;
+  final String note; // return: the reason
+  final double? latitude, longitude;
+  final String result; // visit: sale, payment, return, closed, no_need, other
+  final List<ClosingLine> closingLines;
+  final Map<String, int> summary; // closing: amounts of the day (halalas)
   DocStatus status;
   String error;
   bool inSnapshot; // already reflected in the last downloaded server data
@@ -175,6 +187,11 @@ class Doc {
     this.method = PayMethod.cash,
     this.invoiceNumber = '',
     this.note = '',
+    this.latitude,
+    this.longitude,
+    this.result = '',
+    this.closingLines = const [],
+    this.summary = const {},
     this.status = DocStatus.pending,
     this.error = '',
     this.inSnapshot = false,
@@ -190,8 +207,29 @@ class Doc {
     return Totals(total - tax, tax, total);
   }
 
+  bool get hasLines => kind == DocKind.invoice || kind == DocKind.ret;
+
   /// unpaid (credit) part of an invoice
   int get credit => kind == DocKind.invoice ? totals.total - paid : 0;
+
+  /// change of the customer's debt: a credit sale increases it, a collection and a return
+  /// (except the part refunded in cash) decrease it
+  int get debtEffect => switch (kind) {
+        DocKind.invoice => totals.total - paid,
+        DocKind.payment => -paid,
+        DocKind.ret => -(totals.total - paid),
+        _ => 0,
+      };
+
+  /// change of the van stock of the item: sold goods leave the van, returned goods come back
+  int stockEffect(String itemId) {
+    if (!hasLines) return 0;
+    var q = 0;
+    for (final l in lines.where((l) => l.itemId == itemId)) {
+      q += l.qty;
+    }
+    return kind == DocKind.invoice ? -q : q;
+  }
 
   Map<String, dynamic> toJson() => {
         'id': id,
@@ -207,6 +245,11 @@ class Doc {
         'method': method.name,
         'invoiceNumber': invoiceNumber,
         'note': note,
+        'latitude': latitude,
+        'longitude': longitude,
+        'result': result,
+        'closingLines': closingLines.map((l) => l.toJson()).toList(),
+        'summary': summary,
       };
 
   factory Doc.fromJson(Map<String, dynamic> j,
@@ -225,47 +268,110 @@ class Doc {
         method: PayMethod.values.byName(j['method'] ?? 'cash'),
         invoiceNumber: j['invoiceNumber'] ?? '',
         note: j['note'] ?? '',
+        latitude: (j['latitude'] as num?)?.toDouble(),
+        longitude: (j['longitude'] as num?)?.toDouble(),
+        result: j['result'] ?? '',
+        closingLines: ((j['closingLines'] as List?) ?? const []).map((e) => ClosingLine.fromJson(e)).toList(),
+        summary: ((j['summary'] as Map?) ?? const {}).map((k, v) => MapEntry(k.toString(), (v as num).toInt())),
         status: status,
         error: error,
         inSnapshot: inSnapshot,
       );
 
-  /// The document in the format of Distribution.upload. The date is sent in Saudi local time
-  /// (UTC+3, no daylight saving), as the server keeps invoice dates in local time.
+  /// The document in the format of Distribution.upload. Dates are sent in Saudi local time
+  /// (UTC+3, no daylight saving), as the server keeps document dates in local time.
   Map<String, dynamic> toUploadJson() {
-    final local = date.toUtc().add(const Duration(hours: 3));
-    final d = local.toIso8601String().substring(0, 19);
-    if (kind == DocKind.invoice) {
-      return {
-        'id': id,
-        'number': number,
-        'date': d,
-        'customer': customerId,
-        'taxIncluded': taxIncluded,
-        'paid': formatMoney(paid, grouping: false),
-        'method': method.name,
-        'note': note,
-        'lines': lines
-            .map((l) => {
-                  'item': l.itemId,
-                  'quantity': formatQty(l.qty),
-                  'price': formatMoney(l.price, grouping: false),
-                })
-            .toList(),
-      };
-    }
-    return {
-      'id': id,
-      'number': number,
-      'date': d,
-      'customer': customerId,
-      'amount': formatMoney(paid, grouping: false),
-      'method': method.name,
-      'invoice': invoiceNumber,
-      'note': note,
+    final d = date.toUtc().add(const Duration(hours: 3)).toIso8601String().substring(0, 19);
+    String m(int v) => formatMoney(v, grouping: false);
+    List<Map<String, dynamic>> uploadLines() => lines
+        .map((l) => {'item': l.itemId, 'quantity': formatQty(l.qty), 'price': m(l.price)})
+        .toList();
+    return switch (kind) {
+      DocKind.invoice => {
+          'id': id,
+          'number': number,
+          'date': d,
+          'customer': customerId,
+          'taxIncluded': taxIncluded,
+          'paid': m(paid),
+          'method': method.name,
+          'note': note,
+          'lines': uploadLines(),
+        },
+      DocKind.payment => {
+          'id': id,
+          'number': number,
+          'date': d,
+          'customer': customerId,
+          'amount': m(paid),
+          'method': method.name,
+          'invoice': invoiceNumber,
+          'note': note,
+        },
+      DocKind.ret => {
+          'id': id,
+          'number': number,
+          'date': d,
+          'customer': customerId,
+          'taxIncluded': taxIncluded,
+          'refund': m(paid),
+          'invoice': invoiceNumber,
+          'reason': note,
+          'lines': uploadLines(),
+        },
+      DocKind.visit => {
+          'id': id,
+          'date': d,
+          'customer': customerId,
+          'latitude': latitude,
+          'longitude': longitude,
+          'result': result,
+          'note': note,
+        },
+      DocKind.closing => {
+          'id': id,
+          'number': number,
+          'date': d,
+          'sales': m(summary['sales'] ?? 0),
+          'credit': m(summary['credit'] ?? 0),
+          'returns': m(summary['returns'] ?? 0),
+          'bank': m(summary['bank'] ?? 0),
+          'cashExpected': m(summary['cashExpected'] ?? 0),
+          'cashHanded': m(summary['cashHanded'] ?? 0),
+          'note': note,
+          'lines': closingLines
+              .map((l) => {'item': l.itemId, 'expected': formatQty(l.expected), 'counted': formatQty(l.counted)})
+              .toList(),
+        },
     };
   }
 }
+
+/// end of day closing: the van stock expected by the app and counted by the distributor
+class ClosingLine {
+  final String itemId, itemName, uom;
+  final int expected, counted; // thousandths
+  ClosingLine(this.itemId, this.itemName, this.uom, this.expected, this.counted);
+  int get difference => counted - expected;
+
+  Map<String, dynamic> toJson() => {'item': itemId, 'name': itemName, 'uom': uom, 'expected': expected, 'counted': counted};
+  factory ClosingLine.fromJson(Map<String, dynamic> j) =>
+      ClosingLine(j['item'], j['name'] ?? '', j['uom'] ?? '', j['expected'] ?? 0, j['counted'] ?? 0);
+}
+
+/// what happened at the customer during a visit
+const visitResults = {
+  'sale': 'بيع',
+  'payment': 'تحصيل',
+  'return': 'مرتجع',
+  'closed': 'المحل مغلق',
+  'no_need': 'لا يحتاج بضاعة',
+  'no_money': 'لا يوجد سيولة',
+  'other': 'أخرى',
+};
+
+/// reasons of customer returns
+const returnReasons = ['منتهي الصلاحية', 'تالف', 'بضاعة غير مباعة', 'خطأ في الطلب', 'أخرى'];
 
 String _s(Object? v) => v == null ? '' : v.toString();
 

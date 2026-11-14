@@ -45,8 +45,9 @@ class Api {
   Future<Map<String, dynamic>> getData() async => (await _post('getData')) as Map<String, dynamic>;
 
   /// Returns the result for each document id: "ok" or an error message.
-  Future<Map<String, String>> upload(List<Map<String, dynamic>> invoices, List<Map<String, dynamic>> payments) async {
-    final res = await _post('upload', {'invoices': invoices, 'payments': payments});
+  /// [docs]: arrays of documents by kind: invoices, payments, returns, visits, closings.
+  Future<Map<String, String>> upload(Map<String, List<Map<String, dynamic>>> docs) async {
+    final res = await _post('upload', docs);
     final list = res is List ? res : const [];
     return {for (final e in list.cast<Map<String, dynamic>>()) e['id'].toString(): e['result'].toString()};
   }

@@ -1,7 +1,9 @@
 import 'package:intl/intl.dart' show DateFormat;
 import 'package:material_ui/material_ui.dart';
 
+import '../data/models.dart';
 import 'payment_screen.dart';
+import 'return_screen.dart';
 import 'sale_screen.dart';
 import 'scope.dart';
 import 'theme.dart';
@@ -46,7 +48,7 @@ class CustomerScreen extends StatelessWidget {
           ]),
         ),
         Padding(
-          padding: const EdgeInsets.all(12),
+          padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
           child: Row(children: [
             Expanded(
               child: FilledButton.icon(
@@ -62,6 +64,29 @@ class CustomerScreen extends StatelessWidget {
                 label: const Text('تحصيل'),
                 onPressed: () =>
                     Navigator.of(context).push(MaterialPageRoute(builder: (_) => PaymentScreen(customerId: c.id))),
+              ),
+            ),
+          ]),
+        ),
+        Padding(
+          padding: const EdgeInsets.all(12),
+          child: Row(children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(48)),
+                icon: const Icon(Icons.assignment_return_outlined),
+                label: const Text('مرتجع'),
+                onPressed: () =>
+                    Navigator.of(context).push(MaterialPageRoute(builder: (_) => ReturnScreen(customerId: c.id))),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(48)),
+                icon: const Icon(Icons.location_on_outlined),
+                label: const Text('زيارة بدون بيع'),
+                onPressed: () => _logVisit(context, c),
               ),
             ),
           ]),
@@ -85,4 +110,34 @@ class CustomerScreen extends StatelessWidget {
       ]),
     );
   }
+}
+
+/// Visit without a sale: the reason, with the GPS position.
+Future<void> _logVisit(BuildContext context, Customer c) async {
+  final repo = AppScope.repo(context);
+  final note = TextEditingController();
+  final result = await showModalBottomSheet<String>(
+    context: context,
+    isScrollControlled: true,
+    builder: (ctx) => Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
+      child: SafeArea(
+        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          const Padding(
+            padding: EdgeInsets.all(16),
+            child: Text('نتيجة الزيارة', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: TextField(controller: note, decoration: const InputDecoration(labelText: 'ملاحظة')),
+          ),
+          for (final e in visitResults.entries.where((e) => !const ['sale', 'payment', 'return'].contains(e.key)))
+            ListTile(title: Text(e.value), onTap: () => Navigator.pop(ctx, e.key)),
+        ]),
+      ),
+    ),
+  );
+  if (result == null || !context.mounted) return;
+  await repo.logVisit(c, result, note: note.text.trim());
+  if (context.mounted) showMessage(context, 'تم تسجيل الزيارة');
 }

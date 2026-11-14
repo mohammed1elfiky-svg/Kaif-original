@@ -48,7 +48,13 @@ class LocalDb {
       final key = 'counter.${kind.name}';
       final next = int.parse(await get(key, tx) ?? '0') + 1;
       await put(key, '$next', tx);
-      final series = kind == DocKind.invoice ? prefix : '$prefix-R';
+      final series = switch (kind) {
+        DocKind.invoice => prefix,
+        DocKind.payment => '$prefix-R',
+        DocKind.ret => '$prefix-C',
+        DocKind.visit => '$prefix-V',
+        DocKind.closing => '$prefix-Z',
+      };
       final doc = build('$series-${next.toString().padLeft(6, '0')}');
       await tx.insert('docs', {
         'id': doc.id,

@@ -3,6 +3,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../core/money.dart';
 import '../data/models.dart';
+import 'closing_screen.dart';
 import 'customer_screen.dart';
 import 'receipt_screen.dart';
 import 'scope.dart';
@@ -41,6 +42,11 @@ class _HomeScreenState extends State<HomeScreen> {
       appBar: AppBar(
         title: Text(repo.data?.distributor.name ?? 'الموزع'),
         actions: [
+          IconButton(
+            tooltip: 'إقفال اليوم',
+            icon: const Icon(Icons.lock_clock),
+            onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ClosingScreen())),
+          ),
           if (repo.syncing)
             const Padding(
               padding: EdgeInsets.all(14),
@@ -81,15 +87,33 @@ class _CustomersTab extends StatefulWidget {
 
 class _CustomersTabState extends State<_CustomersTab> {
   String query = '';
+  bool routeOnly = true;
 
   @override
   Widget build(BuildContext context) {
     final repo = AppScope.repo(context);
-    final customers = (repo.data?.customers ?? [])
-        .where((c) => query.isEmpty || c.name.contains(query) || c.phone.contains(query) || c.id.contains(query))
-        .toList()
-      ..sort((a, b) => a.name.compareTo(b.name));
+    final route = repo.todayRoute();
+    final showRoute = routeOnly && route.isNotEmpty && query.isEmpty;
+    final customers = showRoute
+        ? route
+        : ((repo.data?.customers ?? [])
+            .where((c) => query.isEmpty || c.name.contains(query) || c.phone.contains(query) || c.id.contains(query))
+            .toList()
+          ..sort((a, b) => a.name.compareTo(b.name)));
+    final visited = route.where(repo.visitedToday).length;
     return Column(children: [
+      if (route.isNotEmpty)
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+          child: SegmentedButton<bool>(
+            segments: [
+              ButtonSegment(value: true, label: Text('خط سير اليوم ($visited/${route.length})')),
+              const ButtonSegment(value: false, label: Text('كل العملاء')),
+            ],
+            selected: {routeOnly},
+            onSelectionChanged: (v) => setState(() => routeOnly = v.first),
+          ),
+        ),
       Padding(
         padding: const EdgeInsets.all(12),
         child: TextField(
@@ -116,6 +140,10 @@ class _CustomersTabState extends State<_CustomersTab> {
                   if (available != null) 'المتاح: ${money(available)}',
                   if (overdue) 'متأخر ${c.overdueDays} يوم',
                 ].join('  ·  ')),
+                leading: showRoute
+                    ? Icon(repo.visitedToday(c) ? Icons.check_circle : Icons.radio_button_unchecked,
+                        color: repo.visitedToday(c) ? KaifColors.leaf : null)
+                    : null,
                 trailing: overdue ? const Icon(Icons.warning_amber, color: KaifColors.danger) : const Icon(Icons.chevron_left),
                 onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => CustomerScreen(customerId: c.id))),
               ),
@@ -157,7 +185,7 @@ class _DocsTab extends StatelessWidget {
     final repo = AppScope.repo(context);
     final fmt = DateFormat('yyyy-MM-dd HH:mm');
     return ListView(children: [
-      for (final d in repo.docs)
+      for (final d in repo.printableDocs)
         Card(
           child: ListTile(
             leading: Icon(
@@ -168,14 +196,26 @@ class _DocsTab extends StatelessWidget {
                       : Icons.cloud_upload_outlined,
               color: d.status == DocStatus.error ? KaifColors.danger : KaifColors.green,
             ),
-            title: Text('${d.kind == DocKind.invoice ? 'فاتورة' : 'سند قبض'} ${d.number} - ${d.customerName}'),
+            title: Text('${docTitle(d.kind)} ${d.number} - ${d.customerName}'),
             subtitle: Text(d.status == DocStatus.error
                 ? 'رفضه الخادم: ${d.error}'
                 : '${fmt.format(d.date.toLocal())}  ·  ${d.status == DocStatus.sent ? 'مُرسل' : 'بانتظار المزامنة'}'),
-            trailing: Text(money(d.kind == DocKind.invoice ? d.totals.total : d.paid)),
+            trailing: Text(money(switch (d.kind) {
+              DocKind.invoice || DocKind.ret => d.totals.total,
+              DocKind.closing => d.summary['cashHanded'] ?? 0,
+              _ => d.paid,
+            })),
             onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => ReceiptScreen(doc: d))),
           ),
         ),
     ]);
   }
 }
+
+String docTitle(DocKind k) => switch (k) {
+      DocKind.invoice => 'فاتورة',
+      DocKind.payment => 'سند قبض',
+      DocKind.ret => 'مرتجع',
+      DocKind.closing => 'إقفال يوم',
+      DocKind.visit => 'زيارة',
+    };

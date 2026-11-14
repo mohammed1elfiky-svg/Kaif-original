@@ -6,6 +6,7 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/rendering.dart' show RenderRepaintBoundary;
 import 'package:flutter/services.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kaif_distributor/data/api.dart';
 import 'package:kaif_distributor/data/db.dart';
@@ -13,8 +14,10 @@ import 'package:kaif_distributor/data/models.dart';
 import 'package:kaif_distributor/data/repository.dart';
 import 'package:kaif_distributor/data/settings.dart';
 import 'package:kaif_distributor/printing/receipt.dart';
+import 'package:kaif_distributor/ui/closing_screen.dart';
 import 'package:kaif_distributor/ui/customer_screen.dart';
 import 'package:kaif_distributor/ui/home_screen.dart';
+import 'package:kaif_distributor/ui/return_screen.dart';
 import 'package:kaif_distributor/ui/sale_screen.dart';
 import 'package:kaif_distributor/ui/scope.dart';
 import 'package:kaif_distributor/ui/theme.dart';
@@ -57,18 +60,24 @@ void main() {
 
     late Repository repo;
     late Settings settings;
-    late Doc invoice;
+    late Doc invoice, ret, closing;
     await tester.runAsync(() async {
+      FlutterSecureStorage.setMockInitialValues({});
       SharedPreferences.setMockInitialValues({'server': 'https://erp.alkaif.sa', 'user': 'ahmad', 'printerName': 'MPT-III'});
       settings = await Settings.load();
       final dir = await Directory.systemTemp.createTemp('kaif');
       repo = Repository(await LocalDb.open(factory: databaseFactoryFfi, path: '${dir.path}/s.db'))
-        ..api = Api('http://x', 'u', 'p', client: FakeServer().client());
+        ..api = Api('http://x', 'u', 'p', client: FakeServer().client())
+        ..locate = (() async => (latitude: 24.7, longitude: 46.6))
+        ..now = () => DateTime.utc(2026, 11, 15, 7);
       await repo.load();
       await repo.download();
       final c = repo.data!.customer('KN1')!;
       invoice = await repo.saveInvoice(c, [SaleLine('NM1', 'شاي الكيف الأصلي 100 كيس', 'كرتون', 6000, 2000, 1500)], false, 5000,
           PayMethod.cash);
+      ret = await repo.saveReturn(c, [SaleLine('NM1', 'شاي الكيف الأصلي 100 كيس', 'كرتون', 1000, 2000, 1500)], false, 0,
+          invoiceNumber: invoice.number, reason: 'تالف');
+      await repo.savePayment(c, 3000, PayMethod.cash);
     });
 
     final key = GlobalKey();
@@ -108,11 +117,24 @@ void main() {
     await tester.pumpAndSettle();
     await shot(tester, key, '3_sale');
 
-    await render(
-        Scaffold(
+    Widget receipt(Doc d) => Scaffold(
           backgroundColor: Colors.white,
-          body: SingleChildScrollView(child: Center(child: Receipt(doc: invoice, company: repo.data!.company))),
-        ),
-        '4_receipt');
+          body: SingleChildScrollView(child: Center(child: Receipt(doc: d, company: repo.data!.company))),
+        );
+    await render(receipt(invoice), '4_receipt');
+    await render(receipt(ret), '6_credit_note');
+
+    await render(const ReturnScreen(customerId: 'KN1'), '5_return_empty');
+    await tester.tap(find.text('إضافة صنف'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('شاي الكيف 100 كيس').last);
+    await tester.pumpAndSettle();
+    await shot(tester, key, '5_return');
+
+    await render(const ClosingScreen(), '7_closing');
+    await tester.runAsync(() async {
+      closing = await repo.saveClosing({'NM1': 44000}, 8000);
+    });
+    await render(receipt(closing), '8_closing_report');
   });
 }

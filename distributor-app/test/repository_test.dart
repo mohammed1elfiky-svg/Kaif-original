@@ -25,8 +25,9 @@ class FakeServer {
           {'name': 'الكيف الأصلي', 'vat': '310122393500003', 'cr': '1010123456', 'address': 'الرياض', 'phone': '0500000000'}
         ],
         'customers': [
-          {'id': 'KN1', 'name': 'بقالة النور', 'priceType': 'wholesale', 'creditLimit': 500, 'maxOverdueDays': 30, 'debt': debt, 'overdueDays': 0},
-          {'id': 'KN2', 'name': 'مؤسسة متأخرة', 'priceType': 'wholesale', 'creditLimit': 10000, 'maxOverdueDays': 15, 'debt': 300, 'overdueDays': 40},
+          {'id': 'KN1', 'name': 'بقالة النور', 'priceType': 'wholesale', 'creditLimit': 500, 'maxOverdueDays': 30, 'debt': debt, 'overdueDays': 0, 'visitDays': '6,7', 'visitOrder': 2},
+          {'id': 'KN2', 'name': 'مؤسسة متأخرة', 'priceType': 'wholesale', 'creditLimit': 10000, 'maxOverdueDays': 15, 'debt': 300, 'overdueDays': 40, 'visitDays': '7', 'visitOrder': 1},
+          {'id': 'KN3', 'name': 'سوبرماركت الخير', 'priceType': 'wholesale', 'debt': 0, 'visitDays': '1,3'},
         ],
         'openInvoices': [
           {'customer': 'KN1', 'number': 'INV-1', 'date': '2026-11-01T10:00:00', 'amount': 100, 'left': debt}
@@ -55,8 +56,16 @@ class FakeServer {
               onHand -= double.parse(l['quantity']);
             }
           }
-          for (final p in (body['payments'] as List)) {
-            res.add({'id': p['id'], 'result': 'ok'});
+          for (final r in (body['returns'] as List)) {
+            res.add({'id': r['id'], 'result': 'ok'});
+            for (final l in r['lines']) {
+              onHand += double.parse(l['quantity']);
+            }
+          }
+          for (final k in ['payments', 'visits', 'closings']) {
+            for (final p in (body[k] as List)) {
+              res.add({'id': p['id'], 'result': 'ok'});
+            }
           }
           return http.Response.bytes(utf8.encode(jsonEncode(res)), 200);
         }
@@ -74,13 +83,17 @@ void main() {
     server = FakeServer();
     final dir = await Directory.systemTemp.createTemp('kaif');
     final db = await LocalDb.open(factory: databaseFactoryFfi, path: '${dir.path}/test.db');
-    repo = Repository(db)..api = Api('http://server:8080/', 'ahmad', 'secret', client: server.client());
+    repo = Repository(db)
+      ..api = Api('http://server:8080/', 'ahmad', 'secret', client: server.client())
+      ..locate = (() async => (latitude: 24.7136, longitude: 46.6753))
+      // Sunday 2026-11-15, 10:00 in Riyadh
+      ..now = () => DateTime.utc(2026, 11, 15, 7);
     await repo.load();
     await repo.download();
   });
 
   test('download', () {
-    expect(repo.data!.customers.length, 2);
+    expect(repo.data!.customers.length, 3);
     expect(repo.stock('NM1'), 50000);
     expect(server.lastAuth, 'Basic ${base64.encode(utf8.encode('ahmad:secret'))}');
   });
@@ -125,12 +138,15 @@ void main() {
     final c = repo.data!.customer('KN1')!;
     await repo.saveInvoice(c, [SaleLine('NM1', 'شاي', 'كرتون', 2500, 2000, 1500)], false, 1000, PayMethod.cash);
     await repo.savePayment(c, 2000, PayMethod.bank, invoiceNumber: 'INV-1');
-    expect(repo.pendingCount, 2);
+    expect(repo.pendingCount, 4); // 2 documents + 2 visits logged with them
 
     await repo.sync();
     expect(repo.lastSyncError, isNull);
     expect(repo.pendingCount, 0);
     expect(server.uploads.length, 1);
+    expect(server.uploads.first['visits'].length, 2); // logged automatically with the sale and the collection
+    expect(server.uploads.first['visits'][0]['latitude'], 24.7136);
+    expect(server.uploads.first['visits'][0]['result'], 'sale');
     final inv = server.uploads.first['invoices'][0];
     expect(inv['number'], 'D01-000001');
     expect(inv['customer'], 'KN1');
@@ -155,8 +171,91 @@ void main() {
     await repo.saveInvoice(c, [SaleLine('NM1', 'شاي', 'كرتون', 1000, 2000, 1500)], false, 0, PayMethod.cash);
     final again = Repository(repo.db);
     await again.load();
-    expect(again.docs.length, 1);
+    expect(again.docs.where((d) => d.kind == DocKind.invoice).length, 1);
     expect(again.stock('NM1'), 49000);
     expect(again.docs.first.totals.total, 2300);
+  });
+
+  test('return: goods back to the van, debt decreased or cash refunded', () async {
+    final c = repo.data!.customer('KN1')!;
+    final lines = [SaleLine('NM1', 'شاي', 'كرتون', 2000, 2000, 1500)]; // 2 x 20 + 15% = 46
+    final r = await repo.saveReturn(c, lines, false, 0, invoiceNumber: 'INV-1', reason: 'تالف');
+    expect(r.number, 'D01-C-000001');
+    expect(repo.stock('NM1'), 52000);
+    expect(repo.debt(c), 10000 - 4600);
+
+    final r2 = await repo.saveReturn(c, lines, false, 4600, reason: 'تالف');
+    expect(repo.debt(c), 10000 - 4600); // refunded in cash: the debt does not change
+    expect(repo.daySummary().cashRefunds, 4600);
+    expect(repo.daySummary().cashExpected, -4600);
+
+    final up = r2.toUploadJson();
+    expect(up['refund'], '46.00');
+    expect(up['reason'], 'تالف');
+    expect(r.toUploadJson()['invoice'], 'INV-1');
+    expect(up['lines'][0], {'item': 'NM1', 'quantity': '2', 'price': '20.00'});
+
+    await repo.sync();
+    expect(server.uploads.single['returns'].length, 2);
+    expect(repo.stock('NM1'), 54000); // the server has the returns now, not counted twice
+  });
+
+  test('route of the day and visits', () async {
+    // Sunday: KN2 (order 1), then KN1 (order 2); KN3 visits on Monday and Wednesday
+    expect(repo.todayRoute().map((c) => c.id), ['KN2', 'KN1']);
+    final kn1 = repo.data!.customer('KN1')!;
+    expect(repo.visitedToday(kn1), isFalse);
+    final v = await repo.logVisit(kn1, 'closed', note: 'مغلق للصلاة');
+    expect(repo.visitedToday(kn1), isTrue);
+    expect(v.toUploadJson(), {
+      'id': v.id,
+      'date': '2026-11-15T10:00:00',
+      'customer': 'KN1',
+      'latitude': 24.7136,
+      'longitude': 46.6753,
+      'result': 'closed',
+      'note': 'مغلق للصلاة',
+    });
+    // the next day nobody is visited yet
+    repo.now = () => DateTime.utc(2026, 11, 16, 7);
+    expect(repo.visitedToday(kn1), isFalse);
+    expect(repo.todayRoute().map((c) => c.id), ['KN3']);
+  });
+
+  test('closing of the day', () async {
+    final c = repo.data!.customer('KN1')!;
+    // cash sale 46, credit sale 23, bank collection 10, cash collection 5
+    await repo.saveInvoice(c, [SaleLine('NM1', 'شاي', 'كرتون', 2000, 2000, 1500)], false, 4600, PayMethod.cash);
+    await repo.saveInvoice(c, [SaleLine('NM1', 'شاي', 'كرتون', 1000, 2000, 1500)], false, 0, PayMethod.cash);
+    await repo.savePayment(c, 1000, PayMethod.bank);
+    await repo.savePayment(c, 500, PayMethod.cash);
+    final s = repo.daySummary();
+    expect(s.sales, 6900);
+    expect(s.credit, 2300);
+    expect(s.cashExpected, 5100);
+    expect(s.bank, 1000);
+    expect(s.invoices, 2);
+    expect(s.visits, 4);
+
+    expect(repo.stock('NM1'), 47000);
+    repo.now = () => DateTime.utc(2026, 11, 15, 15);
+    final z = await repo.saveClosing({'NM1': 46000}, 5000, note: 'نقص كرتون');
+    expect(z.number, 'D01-Z-000001');
+    expect(z.closingLines.single.difference, -1000);
+    final up = z.toUploadJson();
+    expect(up['cashExpected'], '51.00');
+    expect(up['cashHanded'], '50.00');
+    expect(up['sales'], '69.00');
+    expect(up['lines'], [
+      {'item': 'NM1', 'expected': '47', 'counted': '46'}
+    ]);
+
+    // a new day starts after the closing
+    repo.now = () => DateTime.utc(2026, 11, 16, 7);
+    expect(repo.daySummary().sales, 0);
+    expect(repo.printableDocs.any((d) => d.kind == DocKind.visit), isFalse);
+
+    await repo.sync();
+    expect(server.uploads.single['closings'].length, 1);
   });
 }
