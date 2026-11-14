@@ -118,6 +118,16 @@ loadDemoDataDo () {
         IF NOT rootCategory() THEN NEW r = Category { name(r) <- 'الأصناف'; }
         demoRoot() <- rootCategory();
 
+        // example data of the company for the printed documents and the ZATCA QR code (only when empty:
+        // replace them with the real data of the company in Master data -> Partners -> the company)
+        FOR Company co = defaultCompany() DO {
+            IF NOT vatNumberSa(co) THEN vatNumberSa(co) <- '310000000000003';
+            IF NOT crNumberSa(co) THEN crNumberSa(co) <- '1010000000';
+            IF NOT city(co) THEN city(co) <- 'الرياض';
+            IF NOT districtSa(co) THEN districtSa(co) <- 'الصناعية الثانية';
+            IF NOT phone(co) THEN phone(co) <- '0110000000';
+        }
+
         NEW u = Uom { name(u) <- 'حبة'; demoPiece() <- u; }
         NEW u = Uom { name(u) <- 'كرتون'; demoCarton() <- u; }
 

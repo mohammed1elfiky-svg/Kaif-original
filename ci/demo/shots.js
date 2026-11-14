@@ -28,25 +28,25 @@ async function setForm(f) {
 (async () => {
   fs.mkdirSync(OUT, { recursive: true });
   const browser = await chromium.launch();
-  const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, locale: 'ar-SA' });
+  const page = await browser.newPage({ viewport: { width: 1280, height: 800 }, locale: 'ar-SA' });
   page.on('pageerror', e => console.log('pageerror:', e.message));
 
   await setForm('');
   await page.goto(`${BASE}/login`);
   await page.waitForTimeout(1500);
-  await page.screenshot({ path: `${OUT}/00-login.png` });
+  await page.screenshot({ path: `${OUT}/00-login.jpg`, type: 'jpeg', quality: 55 });
   await page.fill('#username', 'admin');
   await page.fill('#password', '');
   await Promise.all([page.waitForNavigation({ timeout: 60000 }).catch(() => {}), page.press('#password', 'Enter')]);
   await page.waitForTimeout(12000);
-  await page.screenshot({ path: `${OUT}/01-main.png` });
+  await page.screenshot({ path: `${OUT}/01-main.jpg`, type: 'jpeg', quality: 55 });
 
   for (const [name, form] of screens) {
     try {
       await setForm(form);
       await page.goto(`${BASE}/main`);
       await page.waitForTimeout(10000);
-      await page.screenshot({ path: `${OUT}/${name}.png` });
+      await page.screenshot({ path: `${OUT}/${name}.jpg`, type: 'jpeg', quality: 55 });
       console.log('ok', name);
     } catch (e) {
       console.log('failed', name, e.message);

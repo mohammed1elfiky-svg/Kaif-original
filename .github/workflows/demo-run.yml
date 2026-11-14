@@ -89,7 +89,7 @@ jobs:
           curl -sS -u admin: -X POST "http://localhost:8080/exec?action=KaifTest.receiptPdf" -o out/receipt.pdf -w "%{http_code}\n"
           curl -sS -u admin: -X POST "http://localhost:8080/exec?action=KaifTest.creditNotePdf" -o out/credit-note.pdf -w "%{http_code}\n"
           sudo apt-get install -y -qq poppler-utils > /dev/null
-          for f in out/*.pdf; do pdftoppm -png -r 80 -f 1 -l 1 "$f" "${f%.pdf}" || head -c 600 "$f"; done
+          for f in out/*.pdf; do pdftoppm -jpeg -jpegopt quality=60 -r 70 -f 1 -l 1 "$f" "${f%.pdf}" || head -c 600 "$f"; done
           ls -la out
           grep -q '"invoice"' out/scenario.json
 
@@ -105,11 +105,10 @@ jobs:
         if: always()
         run: |
           cd out
-          for f in *.png screens/*.png; do
+          for f in *.jpg screens/*.jpg; do
             [ -f "$f" ] || continue
-            convert "$f" -resize '1100x>' -quality 55 /tmp/img.jpg
             echo "=====IMG $f"
-            base64 -w 0 /tmp/img.jpg; echo
+            base64 -w 0 "$f"; echo
             echo "=====END"
           done
 
