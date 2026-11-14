@@ -1,0 +1,150 @@
+MODULE ImportShipmentSa;
+
+REQUIRE Bill, BillCanceled, BillServiceCost, BillCurrency, Product, CountryP, MetaNumerator, Purchase;
+
+NAMESPACE Purchase;
+
+// Import file: one shipment from a foreign supplier with all its documents (the supplier's invoice, freight,
+// insurance, customs duties, clearance) and the landed cost: the costs of the services of these bills are
+// distributed on the goods, so they go into the cost of the received products.
+
+CLASS ImportStatusSa 'Import status' {
+    ordered 'Ordered',
+    shipped 'Shipped',
+    atPort 'At the port',
+    cleared 'Cleared',
+    received 'Received'
+}
+
+CLASS ImportShipmentSa 'Import file';
+
+@defineNumber(importShipmentSa, 'Import files', 'IMP');
+
+date 'Date' = DATA DATE (ImportShipmentSa);
+WHEN LOCAL SET(ImportShipmentSa s IS ImportShipmentSa) AND NOT date(s) DO date(s) <- currentDate();
+
+vendor = DATA Partner (ImportShipmentSa);
+nameVendor 'Supplier' (ImportShipmentSa s) = name(vendor(s));
+countryOrigin = DATA Country (ImportShipmentSa);
+nameCountryOrigin 'Country of origin' (ImportShipmentSa s) = name(countryOrigin(s));
+
+containerNumber 'Container number' = DATA STRING[50] (ImportShipmentSa);
+billOfLading 'Bill of lading' = DATA STRING[50] (ImportShipmentSa);
+port 'Port' = DATA ISTRING[50] (ImportShipmentSa);
+eta 'Expected arrival' = DATA DATE (ImportShipmentSa);
+arrivalDate 'Arrival date' = DATA DATE (ImportShipmentSa);
+
+status = DATA ImportStatusSa (ImportShipmentSa);
+nameStatus 'Status' (ImportShipmentSa s) = staticCaption(status(s));
+WHEN LOCAL SET(ImportShipmentSa s IS ImportShipmentSa) AND NOT status(s) DO status(s) <- ImportStatusSa.ordered;
+
+note 'Note' = DATA ISTRING[400] (ImportShipmentSa);
+
+// documents of the import
+importShipmentSa = DATA ImportShipmentSa (Bill);
+numberImportShipmentSa 'Import file' (Bill b) = number(importShipmentSa(b));
+
+goodsAmount 'Goods (SAR)' (ImportShipmentSa s) =
+    GROUP SUM NUMERIC[14,2](untaxedAmount(BillLine l) * rate1(l)) IF importShipmentSa(bill(l)) = s AND active(bill(l)) AND item(l) IS Product;
+costsAmount 'Import costs (SAR)' (ImportShipmentSa s) =
+    GROUP SUM NUMERIC[14,2](untaxedAmount(BillLine l) * rate1(l)) IF importShipmentSa(bill(l)) = s AND active(bill(l)) AND item(l) IS Service;
+landedAmount 'Landed cost (SAR)' (ImportShipmentSa s) = goodsAmount(s) (+) costsAmount(s);
+costsPercent 'Costs, %' (ImportShipmentSa s) = NUMERIC[8,2](costsAmount(s) * 100.0 / goodsAmount(s));
+
+countBills 'Documents' (ImportShipmentSa s) = GROUP SUM 1 IF importShipmentSa(Bill b) = s;
+
+// landed cost by line: the goods amount with the distributed costs
+landedUnitCost 'Landed unit cost (SAR)' (BillLine l) =
+    NUMERIC[14,4]((untaxedAmount(l) * rate1(l) (+) costAllocated(l)) / quantity(l)) IF item(l) IS Product;
+
+// distributes all the service lines of the documents on all the goods lines (by the base of each service line,
+// the goods amount when none is set)
+distributeCosts 'Distribute costs' (ImportShipmentSa s) {
+    FOR importShipmentSa(bill(BillLine bsl)) = s AND item(bsl) IS Service DO {
+        IF NOT costAllocationBase(bsl) THEN costAllocationBase(bsl) <- CostAllocationBase.amount;
+        serviceLine(BillLine bl, bsl) <- (importShipmentSa(bill(bl)) = s AND item(bl) IS Product) WHERE bl IS BillLine;
+        allocate(bsl);
+    }
+    APPLY;
+}
+
+FORM importShipmentSa 'Import file'
+    OBJECTS s = ImportShipmentSa PANEL
+    PROPERTIES(s) number, date, nameStatus, nameVendor, nameCountryOrigin, containerNumber, billOfLading, port,
+                  eta, arrivalDate, note,
+                  goodsAmount READONLY, costsAmount READONLY, landedAmount READONLY, costsPercent READONLY,
+                  distributeCosts
+
+    OBJECTS b = Bill
+    PROPERTIES(b) READONLY number, date, nameVendor, nameType, nameCurrency, untaxedAmount, amount
+    PROPERTIES(b) NEWSESSION EDIT
+    FILTERS importShipmentSa(b) = s
+
+    OBJECTS l = BillLine
+    PROPERTIES(l) READONLY nameItem, quantity, untaxedAmount, costAllocated, landedUnitCost
+    FILTERS importShipmentSa(bill(l)) = s, item(l) IS Product
+
+    EDIT ImportShipmentSa OBJECT s
+;
+
+DESIGN importShipmentSa {
+    OBJECTS {
+        NEW header {
+            horizontal = TRUE;
+            alignment = STRETCH;
+            lines = 4;
+            MOVE PROPERTY(number(s));
+            MOVE PROPERTY(date(s));
+            MOVE PROPERTY(nameStatus(s));
+            MOVE PROPERTY(nameVendor(s));
+            MOVE PROPERTY(nameCountryOrigin(s));
+            MOVE PROPERTY(containerNumber(s));
+            MOVE PROPERTY(billOfLading(s));
+            MOVE PROPERTY(port(s));
+            MOVE PROPERTY(eta(s));
+            MOVE PROPERTY(arrivalDate(s));
+        }
+        MOVE PROPERTY(note(s)) { alignment = STRETCH; }
+        NEW totals {
+            horizontal = TRUE;
+            MOVE PROPERTY(goodsAmount(s));
+            MOVE PROPERTY(costsAmount(s));
+            MOVE PROPERTY(landedAmount(s));
+            MOVE PROPERTY(costsPercent(s));
+            MOVE PROPERTY(distributeCosts(s)) { valueClass = 'btn-primary'; }
+        }
+        NEW tabs {
+            tabbed = TRUE;
+            fill = 1;
+            MOVE BOX(b) { caption = 'Documents'; }
+            MOVE BOX(l) { caption = 'Landed cost'; }
+        }
+    }
+}
+
+FORM importShipmentsSa 'Import files'
+    OBJECTS s = ImportShipmentSa
+    PROPERTIES(s) READONLY number, date, nameStatus, nameVendor, nameCountryOrigin, containerNumber, eta, arrivalDate,
+                           countBills, goodsAmount, costsAmount, landedAmount
+    PROPERTIES(s) NEWSESSION NEW, EDIT, DELETE
+    ORDERS date(s) DESC
+    LIST ImportShipmentSa OBJECT s
+;
+
+EXTEND FORM bill
+    PROPERTIES(b) numberImportShipmentSa
+;
+
+DESIGN bill {
+    headerRight {
+        MOVE PROPERTY(numberImportShipmentSa(b));
+    }
+}
+
+NAVIGATOR {
+    purchase {
+        operations {
+            NEW importShipmentsSa;
+        }
+    }
+}

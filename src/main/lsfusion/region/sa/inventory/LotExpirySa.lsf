@@ -1,0 +1,49 @@
+MODULE LotExpirySa;
+
+REQUIRE Lot, InvLedgerLot, Product, DateUtils;
+
+NAMESPACE Inventory;
+
+// Production and expiry dates of the lots (tea packed in house or imported): the expiry date is set from
+// the shelf life of the product when the lot is created, and a report shows the lots in stock that expire soon.
+
+shelfLifeDays 'Shelf life (days)' = DATA INTEGER (Product);
+
+productionDate 'Production date' = DATA DATE (Lot);
+expiryDate 'Expiry date' = DATA DATE (Lot);
+
+WHEN LOCAL SET(Lot l IS Lot) AND NOT productionDate(l) DO productionDate(l) <- currentDate();
+WHEN LOCAL (SET(Lot l IS Lot) OR CHANGED(productionDate(l))) AND shelfLifeDays(product(l)) AND NOT CHANGED(expiryDate(l)) DO
+    expiryDate(l) <- sum(productionDate(l), shelfLifeDays(product(l)));
+
+daysToExpiry 'Days to expiry' (Lot l) = daysBetweenDates(expiryDate(l), currentDate());
+
+expiryWarningDays 'Warn before expiry (days)' = DATA INTEGER ();
+expiryWarning () = OVERRIDE expiryWarningDays(), 60;
+
+colorExpiry (Lot l) = IF expiryDate(l) < currentDate() THEN RGB(255, 180, 180)
+                      ELSE (RGB(255, 230, 160) IF daysToExpiry(l) <= expiryWarning());
+
+EXTEND FORM lot PROPERTIES(l) productionDate, expiryDate BACKGROUND colorExpiry(l);
+EXTEND FORM lots PROPERTIES(l) READONLY productionDate, expiryDate BACKGROUND colorExpiry(l);
+
+EXTEND FORM MasterData.item PROPERTIES(i) shelfLifeDays SHOWIF i IS Product;
+
+// lots in stock that are expired or expire soon
+FORM expiringLots 'Expiring lots'
+    PROPERTIES() expiryWarningDays
+
+    OBJECTS l = Lot
+    PROPERTIES(l) READONLY id, nameProduct, productionDate, expiryDate BACKGROUND colorExpiry(l), daysToExpiry, onHand
+    PROPERTIES(l) NEWSESSION EDIT
+    FILTERS onHand(l) > 0, daysToExpiry(l) <= expiryWarning()
+    ORDERS expiryDate(l)
+;
+
+NAVIGATOR {
+    stock {
+        reporting {
+            NEW expiringLots;
+        }
+    }
+}
