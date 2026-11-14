@@ -101,7 +101,7 @@ FORM leaveSa 'Leave'
     EDIT LeaveSa OBJECT l
 ;
 
-FORM leavesSa 'Leaves'
+FORM leavesSa 'Employee leaves'
     OBJECTS l = LeaveSa
     PROPERTIES(l) READONLY nameEmployee, nameType, dateFrom, dateTo, days, note
     PROPERTIES(l) NEWSESSION NEW, EDIT, DELETE
@@ -120,7 +120,7 @@ EXTEND FORM MasterData.employee
 DESIGN MasterData.employee {
     saudi {
         NEW leaves {
-            caption = 'Leaves';
+            caption = 'Employee leaves';
             NEW leaveBalance {
                 horizontal = TRUE;
                 MOVE PROPERTY(accruedLeaveSa(e));
