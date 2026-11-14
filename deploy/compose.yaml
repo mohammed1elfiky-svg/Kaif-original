@@ -1,0 +1,49 @@
+# Al-Kaif Al-Asli on a server with Docker:
+#   1. copy this folder to the server, copy .env.example to .env and set the passwords
+#   2. docker compose up -d
+#   3. open http://<server>:8080 (user admin, set the password at the first login)
+name: alkaif
+
+services:
+  db:
+    image: postgres:18
+    restart: unless-stopped
+    volumes:
+      - ./docker-db:/var/lib/postgresql
+    environment:
+      - POSTGRES_PASSWORD=${DB_PASSWORD:?set DB_PASSWORD in .env}
+
+  logics:
+    image: ${KAIF_IMAGE:-ghcr.io/mohammed1elfiky-svg/kaif:latest}
+    volumes:
+      - ./docker-server:/lsfusion
+
+  server:
+    image: lsfusion/server:7.0-SNAPSHOT
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_started
+      logics:
+        condition: service_completed_successfully
+    volumes:
+      - ./docker-server:/lsfusion
+    environment:
+      - DB_SERVER=db
+      - DB_PASSWORD=${DB_PASSWORD}
+      - USER_SETLANGUAGE=ar
+      - USER_SETCOUNTRY=SA
+      - USER_SETTIMEZONE=Asia/Riyadh
+      - JAVA_OPTS=${JAVA_OPTS:--Xmx2g}
+
+  client:
+    image: lsfusion/client:7.0-SNAPSHOT
+    restart: unless-stopped
+    depends_on:
+      - server
+    volumes:
+      - ./docker-client-conf:/usr/local/tomcat/conf/Catalina
+    ports:
+      - "${HTTP_PORT:-8080}:8080"
+    environment:
+      - APP_SERVER=server
