@@ -23,3 +23,13 @@ onFirstStarted () + {
     ELSE
         printToLog('Kaif: ERROR default data was not loaded: ' + (OVERRIDE applyMessage(), ''), 'start', 'error');
 }
+
+// date and time without AM / PM (in the right-to-left interface "3:58 PM" mixes with the date): 24 hours,
+// only when not set, so a format chosen in Administration stays
+onStarted () + {
+    NEWSESSION {
+        IF NOT defaultUserDateFormat() THEN defaultUserDateFormat() <- 'dd/MM/yyyy';
+        IF NOT defaultUserTimeFormat() THEN defaultUserTimeFormat() <- 'HH:mm';
+        APPLY;
+    }
+}

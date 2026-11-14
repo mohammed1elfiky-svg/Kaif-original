@@ -2,7 +2,7 @@ MODULE DemoDataSa;
 
 REQUIRE Item, Product, BarCode, ItemSales, ItemSalesPack, ItemUom, Location, Adjustment, AdjustmentDone,
         AdjustmentInProgress, LegalEntity, PartnerSales, PartnerSa, Employee, DebtLimit, Distribution, EcommerceSa,
-        Company, TrialSa, Bom, AdjustmentCost;
+        Company, TrialSa, Bom, AdjustmentCost, TaxItem, TaxGroup;
 
 NAMESPACE Kaif;
 
@@ -117,10 +117,16 @@ loadDemoDataDo () {
         // the categories go under the single root category of the items
         IF NOT rootCategory() THEN NEW r = Category { name(r) <- 'الأصناف'; }
         demoRoot() <- rootCategory();
+        // VAT 15 % by default for the items of all the categories (sales and purchases)
+        FOR Tax t = (GROUP MAX Tax x IF id(taxGroup(x)) = 'vat' AND value(x) = 15) DO {
+            dataSalesIn(demoRoot(), t) <- TRUE;
+            dataPurchaseIn(demoRoot(), t) <- TRUE;
+        }
 
         // example data of the company for the printed documents and the ZATCA QR code (only when empty:
         // replace them with the real data of the company in Master data -> Partners -> the company)
         FOR Company co = defaultCompany() DO {
+            IF NOT dataFullName(co) THEN dataFullName(co) <- 'شركة الكيف الأصلي للتجارة';
             IF NOT vatNumberSa(co) THEN vatNumberSa(co) <- '310000000000003';
             IF NOT crNumberSa(co) THEN crNumberSa(co) <- '1010000000';
             IF NOT city(co) THEN city(co) <- 'الرياض';
