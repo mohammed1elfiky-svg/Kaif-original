@@ -212,7 +212,7 @@ loadDemoData 'Load demo data' () {
     }
     ASK 'Load demo items, warehouses, distributors and customers?' DO {
         loadDemoDataDo();
-        IF demoLoadError() THEN MESSAGE 'Demo data was not loaded: ' + demoLoadError();
+        IF demoLoadError() THEN MESSAGE '{Demo_not_loaded} ' + demoLoadError();
         ELSE IF hasItemsDemo() THEN MESSAGE 'Demo data loaded: 8 items, 3 packing materials with a bill of materials, 3 warehouses, 2 distributors, 6 customers';
     }
 }

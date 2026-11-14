@@ -54,7 +54,7 @@ sendEmailSa 'Email' (Invoice i) {
         TO customerEmailSa(i)
         BODY '<div dir="rtl">' + replace(whatsappTextSa(i), '\n', '<br>') + '</div>'
         ATTACH invoicePdfSa() NAME 'invoice-' + number(i);
-    MESSAGE 'The invoice was sent to ' + customerEmailSa(i);
+    MESSAGE '{kaif.invoice.sentTo} ' + customerEmailSa(i);
 }
 
 EXTEND FORM invoice PROPERTIES(i) sendWhatsAppSa, sendEmailSa;

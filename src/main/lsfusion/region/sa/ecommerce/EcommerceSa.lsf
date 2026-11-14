@@ -210,12 +210,12 @@ importOrder (EcommerceStore s, TEXT j, STRING o) {
             }
         }
         IF missing() THEN {
-            errors() <- CONCAT '\n', errors(), 'Order ' + orderNumber(s, j, o) + ': items not found: ' + missing();
+            errors() <- CONCAT '\n', errors(), '{kaif.ec.order} ' + orderNumber(s, j, o) + ': items not found: ' + missing();
             CANCEL;
         } ELSE {
             APPLY;
             IF canceled() THEN
-                errors() <- CONCAT '\n', errors(), 'Order ' + orderNumber(s, j, o) + ': ' + applyMessage();
+                errors() <- CONCAT '\n', errors(), '{kaif.ec.order} ' + orderNumber(s, j, o) + ': ' + applyMessage();
             ELSE
                 importedCount() <- importedCount() (+) 1;
         }
@@ -284,7 +284,7 @@ importOrders 'Import orders' (EcommerceStore s) {
 
     NEWSESSION NESTED LOCAL {
         lastImport(s) <- currentDateTime();
-        lastMessage(s) <- CONCAT '\n', 'Imported orders: ' + importedCount(), errors();
+        lastMessage(s) <- CONCAT '\n', '{kaif.ec.importedOrders} ' + importedCount(), errors();
         APPLY;
     }
 }
@@ -353,7 +353,7 @@ sendStock 'Send stock' (EcommerceStore s) {
     }
     NEWSESSION NESTED LOCAL {
         lastStockSync(s) <- currentDateTime();
-        lastStockMessage(s) <- CONCAT '\n', 'Items sent: ' + sent(), errors();
+        lastStockMessage(s) <- CONCAT '\n', '{kaif.ec.itemsSent} ' + sent(), errors();
         APPLY;
     }
 }

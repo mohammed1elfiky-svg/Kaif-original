@@ -82,7 +82,7 @@ onWebClientStarted () + {
     IF trialExpired() THEN
         MESSAGE 'The trial period has ended. Enter the activation key in Administration -> Activation' NOWAIT;
     ELSE IF trialDaysLeft() THEN
-        MESSAGE 'Trial version. Days left: ' + trialDaysLeft() NOWAIT;
+        MESSAGE '{kaif.trial.daysLeft} ' + trialDaysLeft() NOWAIT;
 }
 
 FORM licenseSa 'Activation'
