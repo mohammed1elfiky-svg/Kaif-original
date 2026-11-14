@@ -79,7 +79,7 @@ lastMessage 'Result of the last import' = DATA TEXT (EcommerceStore);
 ecommerceStore = DATA EcommerceStore (Invoice);
 nameEcommerceStore 'Online store' (Invoice i) = name(ecommerceStore(i));
 externalId 'Online order ID' = DATA STRING[50] (Invoice) INDEXED;
-invoiceExternal (EcommerceStore s, STRING[50] id) = GROUP AGGR Invoice i WHERE ecommerceStore(i) = s BY ecommerceStore(i), externalId(i);
+invoiceExternal = GROUP AGGR Invoice i BY ecommerceStore(i), externalId(i);
 
 countOrders 'Imported orders' (EcommerceStore s) = GROUP SUM 1 IF ecommerceStore(Invoice i) = s;
 
