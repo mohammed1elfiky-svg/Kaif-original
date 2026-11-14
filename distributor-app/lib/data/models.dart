@@ -4,10 +4,26 @@ import '../core/money.dart';
 
 class Distributor {
   final String id, name, prefix, location;
-  Distributor(this.id, this.name, this.prefix, this.location);
-  factory Distributor.fromJson(Map<String, dynamic> j) =>
-      Distributor(_s(j['id']), _s(j['name']), _s(j['prefix']), _s(j['location']));
+
+  /// last document numbers received by the server, by kind (the app continues after them)
+  final Map<DocKind, String> lastNumbers;
+  Distributor(this.id, this.name, this.prefix, this.location, [this.lastNumbers = const {}]);
+  factory Distributor.fromJson(Map<String, dynamic> j) => Distributor(
+        _s(j['id']),
+        _s(j['name']),
+        _s(j['prefix']),
+        _s(j['location']),
+        {
+          DocKind.invoice: _s(j['lastInvoice']),
+          DocKind.payment: _s(j['lastPayment']),
+          DocKind.ret: _s(j['lastReturn']),
+          DocKind.closing: _s(j['lastClosing']),
+        },
+      );
 }
+
+/// sequence number at the end of a document number: 'D01-R-000123' -> 123
+int numberSequence(String number) => int.tryParse(RegExp(r'(\d+)$').firstMatch(number)?.group(1) ?? '') ?? 0;
 
 class Company {
   final String name, vat, cr, address, phone;

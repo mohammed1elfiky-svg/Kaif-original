@@ -1,0 +1,30 @@
+MODULE DistributionInitial;
+
+REQUIRE Distribution, InvoiceShipmentInitial, CreditNoteReceiptInitial, CreditNoteInitial,
+        IncomingPaymentInitial, OutgoingPaymentInitial, DefaultData;
+
+NAMESPACE Distribution;
+
+// Ready settings for the distributors: an invoice type that takes the goods out of the van at once,
+// a return type that brings them back, and the payment types of the app.
+loadDefaultData () + {
+    NEW t = InvoiceType {
+        name(t) <- 'Distributor invoice';
+        id(t) <- 'distributor';
+        shipmentType(t) <- shipmentType('shipment');
+        autoCreateShipment(t) <- TRUE;
+        billType(t) <- billType('creditnote');
+        invoiceType() <- t;
+    }
+    NEW b = BillType {
+        name(b) <- 'Distributor return';
+        id(b) <- 'distributorreturn';
+        isCreditNote(b) <- TRUE;
+        receiptType(b) <- receiptType('return');
+        autoCreateReceipt(b) <- TRUE;
+        returnBillType() <- b;
+    }
+    cashPaymentType() <- incomingPaymentType('customercash');
+    bankPaymentType() <- incomingPaymentType('customerbank');
+    refundPaymentType() <- outgoingPaymentType('customercash');
+}

@@ -134,6 +134,13 @@ distributionPriceType (Partner p) = OVERRIDE priceType(p), priceType(invoiceType
 usedPriceType (Employee e, PriceType t) = GROUP SUM 1 IF distributor(Partner p) = e AND active(p) AND distributionPriceType(p) = t;
 
 vanOnHand (Employee e, Product p) = onHand(vanLocation(e), p);
+
+// last numbers of the documents of the distributor received by the server: the app continues after them,
+// so the numbers are not repeated after a reinstall of the app or on a new phone
+lastInvoiceNumber (Employee e) = GROUP MAX number(Invoice i) IF distributor(i) = e AND startsWith(number(i), documentPrefix(e) + '-');
+lastPaymentNumber (Employee e) = GROUP MAX reference(IncomingPayment p) IF distributor(p) = e AND startsWith(reference(p), documentPrefix(e) + '-R-');
+lastReturnNumber (Employee e) = GROUP MAX number(Bill b) IF distributor(b) = e AND startsWith(number(b), documentPrefix(e) + '-C-');
+lastClosingNumber (Employee e) = GROUP MAX number(Closing c) IF distributor(c) = e;
 distributorPrice (Employee e, Product i) = GROUP MAX overPriceA(PriceType t, i, currentDateTime()) IF usedPriceType(e, t);
 
 getData () {
@@ -145,7 +152,11 @@ getData () {
                 id = id(Employee x),
                 name = name(x),
                 prefix = documentPrefix(x),
-                location = name(vanLocation(x))
+                location = name(vanLocation(x)),
+                lastInvoice = lastInvoiceNumber(x),
+                lastPayment = lastPaymentNumber(x),
+                lastReturn = lastReturnNumber(x),
+                lastClosing = lastClosingNumber(x)
                 WHERE x = e),
             company = (JSON FROM
                 name = fullName(Company c),

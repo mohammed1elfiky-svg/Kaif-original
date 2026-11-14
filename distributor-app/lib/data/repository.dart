@@ -398,6 +398,9 @@ class Repository extends ChangeNotifier {
     downloadedAt = DateTime.now();
     await db.put('downloadedAt', downloadedAt!.toIso8601String());
     await db.markSentInSnapshot();
+    for (final e in fresh.distributor.lastNumbers.entries) {
+      await db.ensureCounter(e.key, numberSequence(e.value));
+    }
     data = fresh;
     docs = await db.docs();
     notifyListeners();

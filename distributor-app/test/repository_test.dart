@@ -13,13 +13,14 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 /// A fake lsFusion server: serves getData and records uploads.
 class FakeServer {
   double debt = 100;
+  String? lastInvoice;
   double onHand = 50;
   final uploads = <Map<String, dynamic>>[];
   String? lastAuth;
 
   Map<String, dynamic> data() => {
         'distributor': [
-          {'id': 'E1', 'name': 'أحمد', 'prefix': 'D01', 'location': 'سيارة 1'}
+          {'id': 'E1', 'name': 'أحمد', 'prefix': 'D01', 'location': 'سيارة 1', 'lastInvoice': lastInvoice}
         ],
         'company': [
           {'name': 'الكيف الأصلي', 'vat': '310122393500003', 'cr': '1010123456', 'address': 'الرياض', 'phone': '0500000000'}
@@ -257,5 +258,19 @@ void main() {
 
     await repo.sync();
     expect(server.uploads.single['closings'].length, 1);
+  });
+
+  test('numbering continues after the last number on the server (reinstall)', () async {
+    server.lastInvoice = 'D01-000041';
+    await repo.download();
+    final c = repo.data!.customer('KN1')!;
+    final inv = await repo.saveInvoice(c, [SaleLine('NM1', 'شاي', 'كرتون', 1000, 2000, 1500)], false, 2300, PayMethod.cash);
+    expect(inv.number, 'D01-000042');
+    // a lower number from the server does not move the counter back
+    server.lastInvoice = 'D01-000005';
+    await repo.download();
+    final inv2 = await repo.saveInvoice(c, [SaleLine('NM1', 'شاي', 'كرتون', 1000, 2000, 1500)], false, 2300, PayMethod.cash);
+    expect(inv2.number, 'D01-000043');
+    expect(numberSequence('D01-R-000123'), 123);
   });
 }

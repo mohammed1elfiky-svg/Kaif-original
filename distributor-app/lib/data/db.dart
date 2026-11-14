@@ -70,6 +70,16 @@ class LocalDb {
     });
   }
 
+  /// The counter of a kind continues at least after [last] (from the server).
+  Future<void> ensureCounter(DocKind kind, int last) async {
+    if (last <= 0) return;
+    await db.transaction((tx) async {
+      final key = 'counter.${kind.name}';
+      final current = int.parse(await get(key, tx) ?? '0');
+      if (last > current) await put(key, '$last', tx);
+    });
+  }
+
   Future<List<Doc>> docs() async {
     final rows = await db.query('docs', orderBy: 'date DESC');
     return rows

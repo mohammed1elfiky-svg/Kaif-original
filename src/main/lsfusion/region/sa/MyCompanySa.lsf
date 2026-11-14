@@ -11,4 +11,4 @@ REQUIRE MyCompany,
         InvoicePrintSa, InvoicePrintInitialSa, VatReturnSa, PosReceiptSa,
         EmployeeSa, PayrollSa, RolesSa,
         ImportShipmentSa, LotExpirySa, EcommerceSa, TrialSa,
-        Distribution;
+        Distribution, DistributionInitial;
