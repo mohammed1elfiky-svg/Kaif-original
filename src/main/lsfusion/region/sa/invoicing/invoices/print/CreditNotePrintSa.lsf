@@ -16,9 +16,11 @@ isSimplifiedSa 'Simplified' (Bill b) = b IS Bill AND NOT buyerVatNumberSa(b);
 zatcaQR 'ZATCA QR' (Bill b) = zatcaTLV(fullName(company(b)), sellerVatNumberSa(b), dateTime(b), amount(b), (OVERRIDE taxAmount(b), 0.0))
     IF sellerVatNumberSa(b);
 amountWordsSa 'Amount in words' (Bill b) = tafqitSar(amount(b));
+// the invoices of the returned lines, or the invoice number given with the return (returns of the distributors)
+originalInvoicesSa 'Original invoice' (Bill b) = OVERRIDE numberInvoices(b), STRING(vendorReference(b));
 
 EXTEND FORM printBill
     PROPERTIES(o) sellerVatNumberSa, buyerVatNumberSa, crNumberCompanySa, crNumberVendorSa,
                   nationalAddressCompanySa, nationalAddressVendorSa,
-                  isSimplifiedSa, zatcaQR, amountWordsSa
+                  isSimplifiedSa, zatcaQR, amountWordsSa, originalInvoicesSa
 ;
