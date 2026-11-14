@@ -1,0 +1,142 @@
+MODULE DemoDataSa;
+
+REQUIRE Item, Product, BarCode, ItemSales, ItemSalesPack, ItemUom, Location, Adjustment, AdjustmentDone,
+        AdjustmentInProgress, LegalEntity, PartnerSales, PartnerSa, Employee, DebtLimit, Distribution, EcommerceSa,
+        Company, TrialSa;
+
+NAMESPACE Kaif;
+
+// Demo data for the presentation of the trial: tea items with cartons and barcodes, a main warehouse and
+// two vans with opening stock, two distributors and customers on their routes.
+// Administration -> Activation -> Load demo data (only on an empty system: no items yet).
+
+demoPiece = DATA LOCAL Uom ();
+demoCarton = DATA LOCAL Uom ();
+demoWarehouse = DATA LOCAL Location ();
+demoVan1 = DATA LOCAL Location ();
+demoVan2 = DATA LOCAL Location ();
+
+demoProduct (Category c, STRING name, STRING barcode, INTEGER perCarton, NUMERIC[10,2] price,
+             NUMERIC[16,3] qWarehouse, NUMERIC[16,3] qVan) {
+    NEW p = Product {
+        dataName(p) <- ISTRING[200](name);
+        category(p) <- c;
+        uom(p) <- demoPiece();
+        dataSalesUom(p) <- demoCarton();
+        ratio(p, demoCarton()) <- NUMERIC[20,10](perCarton);
+        salesPrice(p) <- price;
+        canBeSold(p) <- TRUE;
+        onlineItem(p) <- TRUE;
+        NEW b = BarCode {
+            item(b) <- p;
+            id(b) <- STRING[13](barcode);
+            dataDefaultBarCode(p) <- b;
+        }
+        FOR Location l = demoWarehouse() AND Adjustment a = (GROUP MAX Adjustment x IF location(x) = l AND NOT done(x))
+            INLINE NEW al = AdjustmentLine DO {
+            adjustment(al) <- a; product(al) <- p; location(al) <- l; realQuantity(al) <- qWarehouse;
+        }
+        FOR Location l IS Location AND (l = demoVan1() OR l = demoVan2()) AND Adjustment a = (GROUP MAX Adjustment x IF location(x) = l AND NOT done(x))
+            INLINE NEW al = AdjustmentLine DO {
+            adjustment(al) <- a; product(al) <- p; location(al) <- l; realQuantity(al) <- qVan;
+        }
+    }
+}
+
+demoLocation (STRING name) {
+    NEW l = Location {
+        name(l) <- ISTRING[30](name);
+        company(l) <- defaultCompany();
+        NEW a = Adjustment {
+            location(a) <- l;
+            dateTime(a) <- currentDateTime();
+            type(a) <- AdjustmentType.manual;
+            note(a) <- 'Opening stock (demo)';
+        }
+    }
+}
+
+demoDistributor (STRING first, STRING last, STRING prefix, Location van) {
+    NEW e = Employee {
+        firstName(e) <- ISTRING[30](first);
+        lastName(e) <- ISTRING[30](last);
+        isDistributor(e) <- TRUE;
+        vanLocation(e) <- van;
+        documentPrefix(e) <- STRING[10](prefix);
+    }
+}
+
+demoCustomer (STRING name, STRING city, STRING district, STRING phone, STRING vat, NUMERIC[14,2] limit,
+              Employee dist, BOOLEAN sun, BOOLEAN tue, BOOLEAN thu, INTEGER ord) {
+    NEW c = LegalEntity {
+        name(c) <- ISTRING[92](name);
+        isCustomer(c) <- TRUE;
+        city(c) <- ISTRING[50](city);
+        districtSa(c) <- ISTRING[50](district);
+        phone(c) <- ISTRING[100](phone);
+        vatNumberSa(c) <- STRING[15](vat);
+        dataCreditLimit(c) <- limit;
+        distributor(c) <- dist;
+        visitSun(c) <- sun; visitTue(c) <- tue; visitThu(c) <- thu;
+        visitOrder(c) <- ord;
+    }
+}
+
+hasItemsDemo () = GROUP SUM 1 IF Product p IS Product;
+
+loadDemoData 'Load demo data' () {
+    IF hasItemsDemo() THEN {
+        MESSAGE 'Demo data can be loaded only on an empty system (there are items already)';
+        RETURN;
+    }
+    ASK 'Load demo items, warehouses, distributors and customers?' DO NEWSESSION {
+        NEW u = Uom { name(u) <- 'حبة'; demoPiece() <- u; }
+        NEW u = Uom { name(u) <- 'كرتون'; demoCarton() <- u; }
+
+        demoLocation('المستودع الرئيسي');
+        demoWarehouse() <- GROUP MAX Location l IF name(l) = 'المستودع الرئيسي';
+        demoLocation('سيارة التوزيع 1');
+        demoVan1() <- GROUP MAX Location l IF name(l) = 'سيارة التوزيع 1';
+        demoLocation('سيارة التوزيع 2');
+        demoVan2() <- GROUP MAX Location l IF name(l) = 'سيارة التوزيع 2';
+
+        NEW black = Category {
+            name(black) <- 'شاي أسود';
+            demoProduct(black, 'شاي الكيف الأصلي فاخر 100 كيس', '6281000000017', 24, 18.50, 480.0, 72.0);
+            demoProduct(black, 'شاي الكيف الأصلي ناعم 450 جم', '6281000000024', 12, 27.00, 240.0, 36.0);
+            demoProduct(black, 'شاي الكيف الأصلي خشن 200 جم', '6281000000031', 24, 14.00, 360.0, 48.0);
+            demoProduct(black, 'شاي الكيف الأصلي سيلاني 1 كجم', '6281000000048', 6, 52.00, 120.0, 18.0);
+        }
+        NEW green = Category {
+            name(green) <- 'شاي أخضر';
+            demoProduct(green, 'شاي أخضر بالنعناع 50 كيس', '6281000000055', 24, 16.00, 240.0, 48.0);
+            demoProduct(green, 'شاي أخضر ياسمين 100 جم', '6281000000062', 24, 21.00, 192.0, 24.0);
+        }
+        NEW herbs = Category {
+            name(herbs) <- 'أعشاب';
+            demoProduct(herbs, 'كرك بالهيل 20 ظرف', '6281000000079', 12, 24.00, 180.0, 36.0);
+            demoProduct(herbs, 'بابونج طبيعي 25 كيس', '6281000000086', 24, 13.50, 144.0, 24.0);
+        }
+
+        demoDistributor('خالد', 'العتيبي', 'D01', demoVan1());
+        demoDistributor('فهد', 'القحطاني', 'D02', demoVan2());
+
+        FOR Employee d = (GROUP MAX Employee e IF documentPrefix(e) = 'D01') DO {
+            demoCustomer('بقالة الريان', 'الرياض', 'الملز', '0551000001', NULL, 3000.00, d, TRUE, NULL, TRUE, 1);
+            demoCustomer('أسواق النخبة', 'الرياض', 'العليا', '0551000002', '300000000000003', 15000.00, d, TRUE, NULL, TRUE, 2);
+            demoCustomer('مقهى الضيافة', 'الرياض', 'السليمانية', '0551000003', NULL, 2000.00, d, TRUE, NULL, NULL, 3);
+        }
+        FOR Employee d = (GROUP MAX Employee e IF documentPrefix(e) = 'D02') DO {
+            demoCustomer('تموينات الحرمين', 'الرياض', 'النسيم', '0552000001', NULL, 3000.00, d, NULL, TRUE, NULL, 1);
+            demoCustomer('هايبر الوفرة', 'الرياض', 'الروضة', '0552000002', '300000000000004', 20000.00, d, NULL, TRUE, NULL, 2);
+            demoCustomer('مطعم البيت الشعبي', 'الرياض', 'الشفا', '0552000003', NULL, 2500.00, d, NULL, TRUE, NULL, 3);
+        }
+
+        done(Adjustment a) <- TRUE WHERE note(a) = 'Opening stock (demo)';
+        APPLY;
+        IF NOT canceled() THEN MESSAGE 'Demo data loaded: 8 items, 3 warehouses, 2 distributors, 6 customers';
+    }
+}
+
+EXTEND FORM licenseSa PROPERTIES() loadDemoData;
+DESIGN licenseSa { MOVE PROPERTY(loadDemoData()); }

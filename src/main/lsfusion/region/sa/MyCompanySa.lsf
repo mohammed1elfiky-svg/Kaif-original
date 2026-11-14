@@ -8,9 +8,9 @@ REQUIRE MyCompany, DefaultData, SystemEvents,
         PartnerSa,
         TaxInitialSa,
         ZatcaQR,
-        InvoicePrintSa, InvoicePrintInitialSa, CreditNotePrintSa, CreditNotePrintInitialSa, VatReturnSa, PosReceiptSa,
+        InvoicePrintSa, InvoicePrintInitialSa, CreditNotePrintSa, CreditNotePrintInitialSa, InvoiceSendSa, VatReturnSa, PosReceiptSa,
         EmployeeSa, PayrollSa, RolesSa,
-        ImportShipmentSa, LotExpirySa, EcommerceSa, TrialSa,
+        ImportShipmentSa, LotExpirySa, EcommerceSa, TrialSa, DemoDataSa,
         Distribution, DistributionInitial;
 
 // The first start of the Saudi edition loads the default data (document types, taxes, templates,
