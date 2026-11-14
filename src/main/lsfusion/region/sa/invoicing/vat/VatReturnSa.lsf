@@ -181,6 +181,13 @@ vatBox 'VAT (SAR)' (VatReturnBox b, Company c, DATE df, DATE dt) = CASE
 isTotalBox (VatReturnBox b) = b = VatReturnBox.b6 OR b = VatReturnBox.b12 OR b = VatReturnBox.b13 OR b = VatReturnBox.b16;
 backgroundBox (VatReturnBox b) = RGB(231, 243, 228) IF isTotalBox(b);
 
+// the same for a period (for the form)
+amountBox 'Amount (SAR)' (VatReturnBox b, Company c, INTERVAL[DATE] p) = amountBox(b, c, from(p), to(p));
+adjustmentBox 'Adjustment (SAR)' (VatReturnBox b, Company c, INTERVAL[DATE] p) = adjustmentBox(b, c, from(p), to(p));
+vatBox 'VAT (SAR)' (VatReturnBox b, Company c, INTERVAL[DATE] p) = vatBox(b, c, from(p), to(p));
+inPeriodSa (Invoice i, Company c, INTERVAL[DATE] p) = inPeriodSa(i, c, from(p), to(p));
+inPeriodSa (Bill b, Company c, INTERVAL[DATE] p) = inPeriodSa(b, c, from(p), to(p));
+
 // documents of the period with their VAT, for checking the return
 netSa 'Net (SAR)' (Invoice i) = GROUP SUM netSa(Tax t, i) IF isVatSa(t);
 vatSa 'VAT (SAR)' (Invoice i) = GROUP SUM taxAmount(Tax t, i) IF isVatSa(t);
@@ -205,20 +212,20 @@ FORM vatReturnSa 'VAT return (ZATCA)'
 
     OBJECTS b = VatReturnBox
     PROPERTIES(b) READONLY captionBox BACKGROUND backgroundBox(b)
-    PROPERTIES READONLY amountBox(b, c, from(p), to(p)) BACKGROUND backgroundBox(b),
-                        adjustmentBox(b, c, from(p), to(p)) BACKGROUND backgroundBox(b),
-                        vatBox(b, c, from(p), to(p)) BACKGROUND backgroundBox(b)
+    PROPERTIES READONLY amountBox(b, c, p) BACKGROUND backgroundBox(b),
+                        adjustmentBox(b, c, p) BACKGROUND backgroundBox(b),
+                        vatBox(b, c, p) BACKGROUND backgroundBox(b)
     ORDERS order(b)
 
     OBJECTS i = Invoice
     PROPERTIES(i) READONLY date, number, nameType, nameCustomer, netSa, vatSa, amount
     PROPERTIES(i) NEWSESSION EDIT
-    FILTERS inPeriodSa(i, c, from(p), to(p))
+    FILTERS inPeriodSa(i, c, p)
 
     OBJECTS bl = Bill
     PROPERTIES(bl) READONLY date, number, nameType, nameVendor, netSa, vatSa, amount
     PROPERTIES(bl) NEWSESSION EDIT
-    FILTERS inPeriodSa(bl, c, from(p), to(p))
+    FILTERS inPeriodSa(bl, c, p)
 ;
 
 DESIGN vatReturnSa {

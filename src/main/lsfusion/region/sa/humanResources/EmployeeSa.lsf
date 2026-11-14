@@ -39,7 +39,7 @@ bankSa = DATA Bank (Employee);
 nameBankSa 'Bank' (Employee e) = name(bankSa(e));
 ibanSa 'IBAN' = DATA STRING[24] (Employee) CHARWIDTH 24;
 
-validIbanSa = FORMULA INTEGER '(CASE WHEN ($1) ~ \'^SA[0-9]\{22\}$\' THEN 1 END)';
+validIbanSa = FORMULA INTEGER '(CASE WHEN ($1) ~ \'^SA[0-9]{22}$\' THEN 1 END)';
 CONSTRAINT ibanSa(Employee e) AND NOT validIbanSa(ibanSa(e))
     MESSAGE 'A Saudi IBAN consists of SA and 22 digits';
 

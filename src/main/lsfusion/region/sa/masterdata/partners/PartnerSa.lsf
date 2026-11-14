@@ -8,7 +8,7 @@ NAMESPACE MasterData;
 vatNumberSa 'VAT number' = DATA STRING[15] (Partner) CHARWIDTH 15;
 partnerVatNumberSa = GROUP MAX Partner p BY vatNumberSa(p);
 
-validVatNumberSa = FORMULA INTEGER '(CASE WHEN ($1) ~ \'^3[0-9]\{13\}3$\' THEN 1 END)';
+validVatNumberSa = FORMULA INTEGER '(CASE WHEN ($1) ~ \'^3[0-9]{13}3$\' THEN 1 END)';
 
 CONSTRAINT vatNumberSa(Partner p) AND NOT validVatNumberSa(vatNumberSa(p))
     MESSAGE 'The VAT number must consist of 15 digits and start and end with 3';
