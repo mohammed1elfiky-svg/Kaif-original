@@ -6,7 +6,7 @@ MODULE MyCompanySa;
 
 REQUIRE MyCompany, DefaultData, SystemEvents,
         PartnerSa,
-        TaxInitialSa,
+        TaxInitialSa, CountryInitialSa,
         ZatcaQR,
         InvoicePrintSa, InvoicePrintInitialSa, CreditNotePrintSa, CreditNotePrintInitialSa, InvoiceSendSa, VatReturnSa, PosReceiptSa,
         EmployeeSa, PayrollSa, RolesSa,

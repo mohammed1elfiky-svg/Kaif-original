@@ -1,0 +1,84 @@
+MODULE CountryInitialSa;
+
+REQUIRE CountryP, DefaultData, SystemEvents;
+
+NAMESPACE MasterData;
+
+// Countries by default (ISO 3166: numeric code as ID, alpha-2, alpha-3): Saudi Arabia, the Gulf, the usual
+// nationalities of the employees (Saudi or not: GOSI rates) and the origins of the tea. Only the missing ones.
+newCountrySa (STRING[3] code, STRING a2, STRING a3, STRING n) {
+    IF NOT country(code) AND NOT (GROUP SUM 1 IF alpha2(Country c) = a2) THEN NEW c = Country {
+        id(c) <- code;
+        alpha2(c) <- ISTRING[2](a2);
+        alpha3(c) <- ISTRING[3](a3);
+        name(c) <- ISTRING[50](n);
+    }
+}
+
+loadDefaultData () + {
+    newCountrySa('682', 'SA', 'SAU', 'السعودية');
+    newCountrySa('784', 'AE', 'ARE', 'الإمارات');
+    newCountrySa('414', 'KW', 'KWT', 'الكويت');
+    newCountrySa('048', 'BH', 'BHR', 'البحرين');
+    newCountrySa('512', 'OM', 'OMN', 'عُمان');
+    newCountrySa('634', 'QA', 'QAT', 'قطر');
+    newCountrySa('887', 'YE', 'YEM', 'اليمن');
+    newCountrySa('818', 'EG', 'EGY', 'مصر');
+    newCountrySa('400', 'JO', 'JOR', 'الأردن');
+    newCountrySa('760', 'SY', 'SYR', 'سوريا');
+    newCountrySa('422', 'LB', 'LBN', 'لبنان');
+    newCountrySa('368', 'IQ', 'IRQ', 'العراق');
+    newCountrySa('729', 'SD', 'SDN', 'السودان');
+    newCountrySa('504', 'MA', 'MAR', 'المغرب');
+    newCountrySa('788', 'TN', 'TUN', 'تونس');
+    newCountrySa('012', 'DZ', 'DZA', 'الجزائر');
+    newCountrySa('356', 'IN', 'IND', 'الهند');
+    newCountrySa('586', 'PK', 'PAK', 'باكستان');
+    newCountrySa('050', 'BD', 'BGD', 'بنغلاديش');
+    newCountrySa('524', 'NP', 'NPL', 'نيبال');
+    newCountrySa('144', 'LK', 'LKA', 'سريلانكا');
+    newCountrySa('608', 'PH', 'PHL', 'الفلبين');
+    newCountrySa('360', 'ID', 'IDN', 'إندونيسيا');
+    newCountrySa('404', 'KE', 'KEN', 'كينيا');
+    newCountrySa('231', 'ET', 'ETH', 'إثيوبيا');
+    newCountrySa('156', 'CN', 'CHN', 'الصين');
+    newCountrySa('792', 'TR', 'TUR', 'تركيا');
+    newCountrySa('826', 'GB', 'GBR', 'المملكة المتحدة');
+    newCountrySa('840', 'US', 'USA', 'الولايات المتحدة');
+}
+
+// also on the start of an existing installation without countries
+onStarted () + {
+    IF NOT (GROUP SUM 1 IF alpha2(Country c) = 'SA') THEN NEWSESSION {
+        newCountrySa('682', 'SA', 'SAU', 'السعودية');
+        newCountrySa('784', 'AE', 'ARE', 'الإمارات');
+        newCountrySa('414', 'KW', 'KWT', 'الكويت');
+        newCountrySa('048', 'BH', 'BHR', 'البحرين');
+        newCountrySa('512', 'OM', 'OMN', 'عُمان');
+        newCountrySa('634', 'QA', 'QAT', 'قطر');
+        newCountrySa('887', 'YE', 'YEM', 'اليمن');
+        newCountrySa('818', 'EG', 'EGY', 'مصر');
+        newCountrySa('400', 'JO', 'JOR', 'الأردن');
+        newCountrySa('760', 'SY', 'SYR', 'سوريا');
+        newCountrySa('422', 'LB', 'LBN', 'لبنان');
+        newCountrySa('368', 'IQ', 'IRQ', 'العراق');
+        newCountrySa('729', 'SD', 'SDN', 'السودان');
+        newCountrySa('504', 'MA', 'MAR', 'المغرب');
+        newCountrySa('788', 'TN', 'TUN', 'تونس');
+        newCountrySa('012', 'DZ', 'DZA', 'الجزائر');
+        newCountrySa('356', 'IN', 'IND', 'الهند');
+        newCountrySa('586', 'PK', 'PAK', 'باكستان');
+        newCountrySa('050', 'BD', 'BGD', 'بنغلاديش');
+        newCountrySa('524', 'NP', 'NPL', 'نيبال');
+        newCountrySa('144', 'LK', 'LKA', 'سريلانكا');
+        newCountrySa('608', 'PH', 'PHL', 'الفلبين');
+        newCountrySa('360', 'ID', 'IDN', 'إندونيسيا');
+        newCountrySa('404', 'KE', 'KEN', 'كينيا');
+        newCountrySa('231', 'ET', 'ETH', 'إثيوبيا');
+        newCountrySa('156', 'CN', 'CHN', 'الصين');
+        newCountrySa('792', 'TR', 'TUR', 'تركيا');
+        newCountrySa('826', 'GB', 'GBR', 'المملكة المتحدة');
+        newCountrySa('840', 'US', 'USA', 'الولايات المتحدة');
+        APPLY;
+    }
+}

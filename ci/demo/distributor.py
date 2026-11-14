@@ -54,7 +54,7 @@ prefix = d.get('prefix') or 'D01'
 
 now = datetime.now(timezone.utc) + timedelta(hours=3)   # Saudi local time, as the app sends
 ts = lambda m: (now + timedelta(minutes=m)).strftime('%Y-%m-%dT%H:%M:%S')
-money = lambda v: f'{v:.2f}'
+money = lambda v: round(v, 2)   # numbers, as the app sends (models.dart toUploadJson)
 
 qa, qb = 24, 12            # one carton of A (24) and one of B (12)
 inv_total = qa * pa + qb * pb
@@ -63,8 +63,8 @@ upload = {
     'invoices': [{
         'id': 'test-inv-1', 'number': f'{prefix}-000001', 'date': ts(0), 'customer': c1['id'],
         'taxIncluded': tax_included, 'paid': money(paid), 'method': 'cash', 'note': '',
-        'lines': [{'item': a['id'], 'quantity': str(qa), 'price': money(pa)},
-                  {'item': b['id'], 'quantity': str(qb), 'price': money(pb)}],
+        'lines': [{'item': a['id'], 'quantity': qa, 'price': money(pa)},
+                  {'item': b['id'], 'quantity': qb, 'price': money(pb)}],
     }],
     'payments': [{
         'id': 'test-pay-1', 'number': f'{prefix}-R-000001', 'date': ts(5), 'customer': c2['id'],
@@ -73,7 +73,7 @@ upload = {
     'returns': [{
         'id': 'test-ret-1', 'number': f'{prefix}-C-000001', 'date': ts(10), 'customer': c1['id'],
         'taxIncluded': tax_included, 'refund': money(0), 'invoice': f'{prefix}-000001', 'reason': 'تالف',
-        'lines': [{'item': a['id'], 'quantity': '2', 'price': money(pa)}],
+        'lines': [{'item': a['id'], 'quantity': 2, 'price': money(pa)}],
     }],
     'visits': [{
         'id': 'test-vis-1', 'date': ts(15), 'customer': customers[2]['id'],
@@ -84,8 +84,8 @@ upload = {
         'sales': money(inv_total), 'credit': money(inv_total - paid), 'returns': money(2 * pa), 'bank': money(0),
         'cashExpected': money(paid + 50), 'cashHanded': money(paid + 50), 'note': '',
         # expected after the day: A = start - 24 + 2 (return), counted one less (a missing piece)
-        'lines': [{'item': a['id'], 'expected': str(int(a['onHand']) - qa + 2), 'counted': str(int(a['onHand']) - qa + 1)},
-                  {'item': b['id'], 'expected': str(int(b['onHand']) - qb), 'counted': str(int(b['onHand']) - qb)}],
+        'lines': [{'item': a['id'], 'expected': int(a['onHand']) - qa + 2, 'counted': int(a['onHand']) - qa + 1},
+                  {'item': b['id'], 'expected': int(b['onHand']) - qb, 'counted': int(b['onHand']) - qb}],
     }],
 }
 result = post('Distribution.upload', upload)

@@ -54,13 +54,13 @@ class FakeServer {
             res.add({'id': i['id'], 'result': 'ok'});
             // the server now has the sale
             for (final l in i['lines']) {
-              onHand -= double.parse(l['quantity']);
+              onHand -= (l['quantity'] as num).toDouble();
             }
           }
           for (final r in (body['returns'] as List)) {
             res.add({'id': r['id'], 'result': 'ok'});
             for (final l in r['lines']) {
-              onHand += double.parse(l['quantity']);
+              onHand += (l['quantity'] as num).toDouble();
             }
           }
           for (final k in ['payments', 'visits', 'closings']) {
@@ -151,11 +151,11 @@ void main() {
     final inv = server.uploads.first['invoices'][0];
     expect(inv['number'], 'D01-000001');
     expect(inv['customer'], 'KN1');
-    expect(inv['paid'], '10.00');
-    expect(inv['lines'][0], {'item': 'NM1', 'quantity': '2.5', 'price': '20.00'});
+    expect(inv['paid'], 10.0);
+    expect(inv['lines'][0], {'item': 'NM1', 'quantity': 2.5, 'price': 20.0});
     expect(RegExp(r'^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d$').hasMatch(inv['date']), isTrue);
     final pay = server.uploads.first['payments'][0];
-    expect(pay['amount'], '20.00');
+    expect(pay['amount'], 20.0);
     expect(pay['method'], 'bank');
     expect(pay['invoice'], 'INV-1');
 
@@ -191,10 +191,10 @@ void main() {
     expect(repo.daySummary().cashExpected, -4600);
 
     final up = r2.toUploadJson();
-    expect(up['refund'], '46.00');
+    expect(up['refund'], 46.0);
     expect(up['reason'], 'تالف');
     expect(r.toUploadJson()['invoice'], 'INV-1');
-    expect(up['lines'][0], {'item': 'NM1', 'quantity': '2', 'price': '20.00'});
+    expect(up['lines'][0], {'item': 'NM1', 'quantity': 2, 'price': 20.0});
 
     await repo.sync();
     expect(server.uploads.single['returns'].length, 2);
@@ -244,11 +244,11 @@ void main() {
     expect(z.number, 'D01-Z-000001');
     expect(z.closingLines.single.difference, -1000);
     final up = z.toUploadJson();
-    expect(up['cashExpected'], '51.00');
-    expect(up['cashHanded'], '50.00');
-    expect(up['sales'], '69.00');
+    expect(up['cashExpected'], 51.0);
+    expect(up['cashHanded'], 50.0);
+    expect(up['sales'], 69.0);
     expect(up['lines'], [
-      {'item': 'NM1', 'expected': '47', 'counted': '46'}
+      {'item': 'NM1', 'expected': 47, 'counted': 46}
     ]);
 
     // a new day starts after the closing

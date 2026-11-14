@@ -314,10 +314,11 @@ class Doc {
   /// (UTC+3, no daylight saving), as the server keeps document dates in local time.
   Map<String, dynamic> toUploadJson() {
     final d = date.toUtc().add(const Duration(hours: 3)).toIso8601String().substring(0, 19);
-    String m(int v) => formatMoney(v, grouping: false);
-    List<Map<String, dynamic>> uploadLines() => lines
-        .map((l) => {'item': l.itemId, 'quantity': formatQty(l.qty), 'price': m(l.price)})
-        .toList();
+    // amounts and quantities as JSON numbers: the server reads NUMERIC fields only from numbers
+    num m(int halalas) => halalas / 100;
+    num q(int milli) => milli % 1000 == 0 ? milli ~/ 1000 : milli / 1000;
+    List<Map<String, dynamic>> uploadLines() =>
+        lines.map((l) => {'item': l.itemId, 'quantity': q(l.qty), 'price': m(l.price)}).toList();
     return switch (kind) {
       DocKind.invoice => {
           'id': id,
@@ -372,7 +373,7 @@ class Doc {
           'cashHanded': m(summary['cashHanded'] ?? 0),
           'note': note,
           'lines': closingLines
-              .map((l) => {'item': l.itemId, 'expected': formatQty(l.expected), 'counted': formatQty(l.counted)})
+              .map((l) => {'item': l.itemId, 'expected': q(l.expected), 'counted': q(l.counted)})
               .toList(),
         },
     };

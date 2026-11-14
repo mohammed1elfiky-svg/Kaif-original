@@ -324,7 +324,7 @@ FORM importDistribution
                         retCustomer EXTID 'customer', retTaxIncluded EXTID 'taxIncluded',
                         retRefund EXTID 'refund', retInvoice EXTID 'invoice', retReason EXTID 'reason'
 
-    OBJECTS returnLines = LONG
+    OBJECTS returnLines = LONG EXTID 'lines'
     PROPERTIES(returnLines) retLineItem EXTID 'item', retLineQuantity EXTID 'quantity', retLinePrice EXTID 'price'
     FILTERS retLineReturn(returnLines) = returns
 
@@ -339,7 +339,7 @@ FORM importDistribution
                          cloBank EXTID 'bank', cloCashExpected EXTID 'cashExpected',
                          cloCashHanded EXTID 'cashHanded', cloNote EXTID 'note'
 
-    OBJECTS closingLines = LONG
+    OBJECTS closingLines = LONG EXTID 'lines'
     PROPERTIES(closingLines) cloLineItem EXTID 'item', cloLineExpected EXTID 'expected', cloLineCounted EXTID 'counted'
     FILTERS cloLineClosing(closingLines) = closings
 ;
