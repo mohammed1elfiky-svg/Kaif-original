@@ -119,6 +119,9 @@ runDemo () {
         consumedAmount = consumedAmount(),
         packingUnitCost = NUMERIC[14,4](totalCost(lastPacking()) / 100.0),
         packingExpectedUnitCost = 7.00,
+        hasLogo = TRUE IF logicsLogo(),
+        appCaption = logicsCaption(),
+        appDisplayName = displayName(),
         looseTeaLeftKg = onHand(demoWarehouse(), (GROUP MAX Product p IF dataName(p) = 'شاي أسود كيني سائب (مستورد)'));
 } @@api;
 
